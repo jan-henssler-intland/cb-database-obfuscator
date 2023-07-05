@@ -163,6 +163,20 @@ UPDATE object_reference
 SET url = concat('/', from_id)
 WHERE url LIKE '\/%';
 
+/*obfuscate urls in wiki fields*/
+UPDATE object_reference
+SET url = 'url-something'
+WHERE to_id IS NULL
+AND to_type_id IS NULL
+AND assoc_id IS NULL
+AND field_id IS NOT NULL;
+
+/*obfuscate usernames in url*/
+UPDATE object_reference ref
+inner join users u
+on lower(ref.url)
+like u.name
+set url=replace(url, u.name, concat('user-', u.id));
 
 COMMIT;
 
@@ -184,8 +198,8 @@ COMMIT;
 UPDATE object_revision r
 SET r.description = JSON_REPLACE(r.description,
                                  '$.description',
-                                 concat('Obfuscated description',
-                                        random_string(22)))
+                                 concat('Obfuscated description-',
+                                        LENGTH(r.description)))
 WHERE r.type_id NOT IN (9, 10, 17, 23, 24, 28)
   AND JSON_VALID(r.description);
 
@@ -215,11 +229,31 @@ SET r.description = CONCAT('Obfuscated description-', LENGTH(r.description))
 WHERE r.type_id IN (13, 15)
   AND NOT JSON_VALID(r.description);
 
-/*delete description of : file, folder, baseline*/
+/*delete description of : file, folder, baseline, user, tracker, dashboard*/
 UPDATE object_revision r
 SET r.description = NULL
-WHERE r.type_id IN (1, 2, 12, 34);
+WHERE r.type_id IN (1, 2, 12, 30, 31, 32, 34);
 
+/*Clear the JIRA or DOORs history entry*/
+CREATE TEMPORARY TABLE IF NOT EXISTS tmp_jira ENGINE=MEMORY AS (
+SELECT REF.assoc_id FROM object_reference REF
+         INNER JOIN object TRK
+                    ON TRK.id = REF.to_id
+         INNER JOIN existing PRJ
+                    ON PRJ.proj_id = TRK.proj_id
+         INNER JOIN object_revision REV
+                    ON REV.object_id = TRK.id
+                        AND REV.revision = TRK.revision
+         INNER JOIN object ASSOC
+                    ON ASSOC.id = REF.assoc_id
+         INNER JOIN object_revision ARV
+                    ON ARV.object_id = ASSOC.id
+                        AND ARV.revision = ASSOC.revision
+WHERE REF.from_type_id IN (2277294, 65231461)
+  AND REF.to_type_id = 3
+);
+
+UPDATE object_revision SET description = NULL WHERE object_id IN ( SELECT assoc_id FROM tmp_jira );
 COMMIT;
 
 CALL replace_obfuscated_user();
@@ -361,10 +395,30 @@ SET name        = concat('WS-', id),
 WHERE name != 'member';
 COMMIT;
 
+DELETE FROM background_job;
+COMMIT;
+
+DELETE FROM background_step;
+COMMIT;
+
+TRUNCATE TABLE document_cache_data_blobs;
+COMMIT;
+
+DELETE FROM document_cache_data;
+COMMIT;
+
+TRUNCATE TABLE background_job_meta;
+COMMIT;
+
+TRUNCATE TABLE background_step_result;
+COMMIT;
+
+TRUNCATE TABLE background_step_context;
+COMMIT;
+
 /*remove stored configs*/
 TRUNCATE TABLE application_configuration;
 COMMIT;
-
 
 DELIMITER //
 DROP FUNCTION IF EXISTS translate//

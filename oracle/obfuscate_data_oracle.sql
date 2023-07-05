@@ -91,10 +91,23 @@ WHERE url LIKE 'mailto:%';
 UPDATE object_reference
 SET url = '/' || from_id
 WHERE url LIKE '/%';
+
+/*obfuscate urls in wiki fields*/
+UPDATE object_reference
+SET url = 'url-something'
+WHERE to_id IS NULL
+AND to_type_id IS NULL
+AND assoc_id IS NULL
+AND field_id IS NOT NULL;
+
+/*obfuscate usernames in url*/
+update (select obj_ref.url, u.name, u.id from object_reference obj_ref inner join users u on LOWER(obj_ref.url) like u.name) 
+set url=replace(url, name, concat('user-', id));
+
 COMMIT;
 
 /*remove all file content except: vintage reports, calendar, work calendars*/
-TRUNCATE object_revision_blobs;
+TRUNCATE TABLE object_revision_blobs;
 COMMIT;
 
 /*update name of artifacts except: calendars, work calendars, roles, groups, member group,
@@ -112,8 +125,8 @@ COMMIT;
   state transition, transition condition, workflow action*/
 UPDATE object_revision r
 SET r.description = REGEXP_REPLACE(r.description, '"description":\s*"((\\"|[^"])*)"',
-                                   '"description":"Obfuscated description' ||
-                                   dbms_random.string('a', 22) || '"')
+                                   '"description":"Obfuscated description-' ||
+                                   LENGTH(r.description) || '"')
 WHERE r.TYPE_ID NOT IN (9, 10, 17, 23, 24, 28);
 COMMIT;
 
@@ -137,10 +150,10 @@ SET r.description = 'Obfuscated description-' || LENGTH(r.description)
 WHERE r.type_id IN (13, 15)
   AND r.description IS NOT JSON;
 
-/*delete description of : file, folder, baseline*/
+/*delete description of : file, folder, baseline, user, tracker, dashboard*/
 UPDATE object_revision r
 SET r.description = NULL
-WHERE r.type_id IN (1, 2, 12, 34);
+WHERE r.type_id IN (1, 2, 12, 30, 31, 32, 34);
 COMMIT;
 
 /*update user data*/
@@ -273,6 +286,27 @@ UPDATE workingset
 SET name        = 'WS-' || id,
     description = NULL
 WHERE name != 'member';
+COMMIT;
+
+DELETE FROM background_job;
+COMMIT;
+
+DELETE FROM background_step;
+COMMIT;
+
+TRUNCATE TABLE document_cache_data_blobs;
+COMMIT;
+
+TRUNCATE TABLE document_cache_data;
+COMMIT;
+
+TRUNCATE TABLE background_job_meta;
+COMMIT;
+
+TRUNCATE TABLE background_step_result;
+COMMIT;
+
+TRUNCATE TABLE background_step_context;
 COMMIT;
 
 /*remove stored configs*/

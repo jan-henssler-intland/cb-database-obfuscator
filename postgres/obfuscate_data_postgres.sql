@@ -110,6 +110,19 @@ COMMIT;
 UPDATE object_reference SET url=CONCAT('file://', from_id) WHERE url LIKE 'file://%';
 UPDATE object_reference SET url=CONCAT('mailto:', from_id, '@testemail.testemail') WHERE url LIKE 'mailto:%';
 UPDATE object_reference SET url=CONCAT('/', from_id) WHERE url LIKE '\/%';
+
+/*obfuscate urls in wiki fields*/
+UPDATE object_reference
+SET url = 'url-something'
+WHERE to_id IS NULL
+AND to_type_id IS NULL
+AND assoc_id IS NULL
+AND field_id IS NOT NULL;
+
+/*obfuscate usernames in url*/
+UPDATE object_reference obj
+set url=replace(obj.url, u.name, concat('user-', u.id))
+from object_reference obj_ref inner join users u on LOWER(obj_ref.url) like u.name;
 COMMIT;
 
 /*remove all file content except: vintage reports, calendar, work calendar*/
@@ -132,7 +145,7 @@ COMMIT;
 UPDATE object_revision r
 SET description = jsonb_set(r.description::JSONB,
     '{description}',
-    CONCAT('"','Obfuscated description-',RANDOM_STRING(LENGTH(r.description::JSON ->> 'description')-22),'"')::JSONB, FALSE)
+    CONCAT('"','Obfuscated description-',LENGTH(r.description::JSON ->> 'description'),'"')::JSONB, FALSE)
 WHERE EXISTS(SELECT 1 FROM object o WHERE o.id = r.object_id AND o.type_id NOT IN (9, 10, 17, 23, 24, 28))
 	AND IS_VALID_JSON(r.description);
 COMMIT;
@@ -162,10 +175,31 @@ WHERE r.type_id IN (13, 15)
 	AND NOT IS_VALID_JSON(r.description);
 COMMIT;
 
-/*delete description of : file, folder, baseline*/
+/*delete description of : file, folder, baseline, user, tracker, dashboard*/
 UPDATE object_revision r
 SET description = NULL
-WHERE r.type_id IN (1, 2, 12, 34);
+WHERE r.type_id IN (1, 2, 12, 30, 31, 32, 34);
+COMMIT;
+
+CREATE TEMPORARY TABLE IF NOT EXISTS tmp_jira AS (
+SELECT REF.assoc_id FROM object_reference REF
+         INNER JOIN object TRK
+                    ON TRK.id = REF.to_id
+         INNER JOIN existing PRJ
+                    ON PRJ.proj_id = TRK.proj_id
+         INNER JOIN object_revision REV
+                    ON REV.object_id = TRK.id
+                        AND REV.revision = TRK.revision
+         INNER JOIN object ASSOC
+                    ON ASSOC.id = REF.assoc_id
+         INNER JOIN object_revision ARV
+                    ON ARV.object_id = ASSOC.id
+                        AND ARV.revision = ASSOC.revision
+WHERE REF.from_type_id IN (2277294, 65231461)
+  AND REF.to_type_id = 3
+);
+
+UPDATE object_revision SET description = NULL WHERE object_id IN ( SELECT assoc_id FROM tmp_jira );
 COMMIT;
 
 /*update user data*/
@@ -309,6 +343,11 @@ SET name = CONCAT('WS-', id), description = NULL
 WHERE name != 'member';
 COMMIT;
 
+TRUNCATE TABLE document_cache_data_blobs, document_cache_data;
+COMMIT;
+
+TRUNCATE TABLE background_job, background_step,background_step_result,background_step_context,background_job_meta;
+COMMIT;
 
 /*remove stored configs*/
 TRUNCATE TABLE application_configuration;
