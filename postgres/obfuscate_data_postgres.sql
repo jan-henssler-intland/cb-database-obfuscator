@@ -277,6 +277,11 @@ SET details = CAST(LENGTH(details) AS VARCHAR)
 WHERE details IS NOT NULL;
 COMMIT;
 
+/*update task summary*/
+UPDATE task_search_history
+SET summary = CONCAT('Task', id, ' ', SUBSTR(summary, 1, 4), ' :', LENGTH(summary))
+WHERE summary IS NOT NULL;
+COMMIT;
 
 /*UPDATE custom field value (not choice data)*/
 
@@ -347,6 +352,33 @@ TRUNCATE TABLE document_cache_data_blobs, document_cache_data;
 COMMIT;
 
 TRUNCATE TABLE background_job, background_step,background_step_result,background_step_context,background_job_meta;
+COMMIT;
+
+TRUNCATE TABLE qrtz_blob_triggers;
+COMMIT;
+
+TRUNCATE TABLE qrtz_calendars;
+COMMIT;
+
+TRUNCATE TABLE qrtz_cron_triggers;
+COMMIT;
+
+TRUNCATE TABLE qrtz_fired_triggers;
+COMMIT;
+
+TRUNCATE TABLE qrtz_locks;
+COMMIT;
+
+TRUNCATE TABLE qrtz_paused_trigger_grps;
+COMMIT;
+
+TRUNCATE TABLE qrtz_scheduler_state;
+COMMIT;
+
+TRUNCATE TABLE qrtz_simple_triggers;
+COMMIT;
+
+TRUNCATE TABLE qrtz_simprop_triggers;
 COMMIT;
 
 /*remove stored configs*/

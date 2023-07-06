@@ -230,6 +230,12 @@ SET details = TO_CHAR(LENGTH(details))
 WHERE details IS NOT NULL;
 COMMIT;
 
+/*update task summary*/
+UPDATE task_search_history
+SET summary = 'Task' || id || ' ' || substr(summary, 1, 4) || ' :' || LENGTH(summary)
+WHERE summary IS NOT NULL;
+COMMIT;
+
 /*UPDATE custom field value (not choice data)*/
 UPDATE task_field_value
 SET field_value = (
@@ -307,6 +313,33 @@ TRUNCATE TABLE background_step_result;
 COMMIT;
 
 TRUNCATE TABLE background_step_context;
+COMMIT;
+
+TRUNCATE TABLE qrtz_blob_triggers;
+COMMIT;
+
+TRUNCATE TABLE qrtz_calendars;
+COMMIT;
+
+TRUNCATE TABLE qrtz_cron_triggers;
+COMMIT;
+
+TRUNCATE TABLE qrtz_fired_triggers;
+COMMIT;
+
+TRUNCATE TABLE qrtz_locks;
+COMMIT;
+
+TRUNCATE TABLE qrtz_paused_trigger_grps;
+COMMIT;
+
+TRUNCATE TABLE qrtz_scheduler_state;
+COMMIT;
+
+TRUNCATE TABLE qrtz_simple_triggers;
+COMMIT;
+
+TRUNCATE TABLE qrtz_simprop_triggers;
 COMMIT;
 
 /*remove stored configs*/
