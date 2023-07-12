@@ -1,3 +1,5 @@
+
+
 DELIMITER //
 DROP PROCEDURE IF EXISTS replace_obfuscated_user;
 //
@@ -401,16 +403,22 @@ SET name        = concat('WS-', id),
 WHERE name != 'member';
 COMMIT;
 
-DELETE FROM background_job;
+SET FOREIGN_KEY_CHECKS = 0;
+TRUNCATE table background_job;
+SET FOREIGN_KEY_CHECKS = 1;
 COMMIT;
 
-DELETE FROM background_step;
+SET FOREIGN_KEY_CHECKS = 0;
+TRUNCATE table background_step;
+SET FOREIGN_KEY_CHECKS = 1;
 COMMIT;
 
 TRUNCATE TABLE document_cache_data_blobs;
 COMMIT;
 
-DELETE FROM document_cache_data;
+SET FOREIGN_KEY_CHECKS = 0;
+TRUNCATE table document_cache_data;
+SET FOREIGN_KEY_CHECKS = 1;
 COMMIT;
 
 TRUNCATE TABLE background_job_meta;

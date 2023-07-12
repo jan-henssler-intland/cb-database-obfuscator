@@ -294,10 +294,10 @@ SET name        = 'WS-' || id,
 WHERE name != 'member';
 COMMIT;
 
-DELETE FROM background_job;
+TRUNCATE TABLE background_job;
 COMMIT;
 
-DELETE FROM background_step;
+TRUNCATE TABLE background_step;
 COMMIT;
 
 TRUNCATE TABLE document_cache_data_blobs;
