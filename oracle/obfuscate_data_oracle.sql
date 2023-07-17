@@ -1,4 +1,5 @@
 /*Audit trail logs*/
+create or replace PROCEDURE replace_obfuscate_users as
 BEGIN
   DECLARE
     obfuscate_audit_trial BOOLEAN DEFAULT FALSE;
@@ -13,29 +14,21 @@ BEGIN
         FETCH c_users INTO v_id, v_name;
         EXIT WHEN c_users%NOTFOUND;
 
-        -- "bond's personal wiki"
+        -- "bond's personal wiki" -- "bond [1]" -- {"name":"bond","id":1} -- {"id":1,"name":"bond"}
         UPDATE audit_trail_logs
-        SET details = REPLACE(details, '"' || v_name || '''s Personal Wiki"', '"user-' || v_id || '''s Personal Wiki"');
-
-        -- "bond [1]"
-        UPDATE audit_trail_logs
-        SET details = REPLACE(details, '"' || v_name || ' [' || v_id || ']"', '"user-' || v_id || ' [' || v_id || ']"');
-
-        -- {"name":"bond","id":1}
-        UPDATE audit_trail_logs
-        SET details = REPLACE(details, '{"name":"' || v_name || '","id":' || v_id || '}',
-                              '{"name":"user-' || v_id || '", "id":' || v_id || '}');
-
-        -- {"id":1,"name":"bond"}
-        UPDATE audit_trail_logs
-        SET details = REPLACE(details, '{"id":' || v_id || ',"name":"' || v_name || '"}',
-                              '{"id":' || v_id || ',"name":"user-' || v_id || '"}');
+        SET details = REPLACE(
+						REPLACE(
+							REPLACE(
+								REPLACE(details, '{"id":' || v_id || ',"name":"' || v_name || '"}','{"id":' || v_id || ',"name":"user-' || v_id || '"}'),
+							'{"name":"' || v_name || '","id":' || v_id || '}','{"name":"user-' || v_id || '", "id":' || v_id || '}'),
+						'"' || v_name || ' [' || v_id || ']"', '"user-' || v_id || ' [' || v_id || ']"'),
+					'"' || v_name || '''s Personal Wiki"', '"user-' || v_id || '''s Personal Wiki"');
         COMMIT;
       END LOOP;
       CLOSE c_users;
     END IF;
   END;
-END;
+END replace_obfuscate_users;
 /
 
 CREATE OR REPLACE FUNCTION SHOULD_OBFUSCATE(
@@ -71,6 +64,102 @@ CREATE OR REPLACE FUNCTION SHOULD_OBFUSCATE(
   END;
 /
 
+create or replace PROCEDURE replace_obfuscate_object_reference as
+BEGIN
+  DECLARE
+    obfuscate_object_reference BOOLEAN DEFAULT TRUE;
+   BEGIN
+    IF obfuscate_object_reference
+    THEN
+        /*object_reference*/
+		UPDATE object_reference
+		SET url = 'file://' || from_id
+		WHERE url LIKE 'file://%';
+		UPDATE object_reference
+		SET url = 'mailto:' || from_id || '@testemail.testemail'
+		WHERE url LIKE 'mailto:%';
+		UPDATE object_reference
+		SET url = '/' || from_id
+		WHERE url LIKE '/%';
+		COMMIT;
+
+		/*obfuscate urls in wiki fields*/
+		UPDATE object_reference
+		SET url = 'url-something'
+		WHERE to_id IS NULL
+		AND to_type_id IS NULL
+		AND assoc_id IS NULL
+		AND field_id IS NOT NULL;
+		COMMIT;
+
+		/*obfuscate usernames in url*/
+		update (select obj_ref.url, u.name, u.id from object_reference obj_ref inner join users u on LOWER(obj_ref.url) like u.name) 
+		set url=replace(url, name, concat('user-', id));
+		COMMIT;
+
+    END IF;
+  END;
+END replace_obfuscate_object_reference;
+/
+
+create or replace PROCEDURE replace_obfuscate_object_revision as
+BEGIN
+  DECLARE
+    obfuscate_object_revision BOOLEAN DEFAULT TRUE;
+   BEGIN
+    IF obfuscate_object_revision
+    THEN
+        /*update name of artifacts except: calendars, work calendars, roles, groups, member group,
+		  state transition, field definitions, choice option, release rank, review config,
+		  review tracker, state transition, transition condition, workflow action, artifact file link*/
+		UPDATE object_revision r
+		SET r.name = r.object_id || '-artifact ' || substr(r.name, 1, 4) || ' :' || LENGTH(r.name)
+		WHERE r.name NOT IN ('codeBeamer Review Project Review Tracker',
+							 'codeBeamer Review Project Review Item Tracker',
+							 'codeBeamer Review Project Review Config Template Tracker')
+		  AND r.type_id NOT IN (9, 10, 17, 18, 19, 21, 23, 25, 26, 33, 35, 44);
+		COMMIT;
+
+		/*update description of artifacts, except: calendar, work calendar, association
+		  state transition, transition condition, workflow action*/
+		UPDATE object_revision r
+		SET r.description = REGEXP_REPLACE(r.description, '"description":\s*"((\\"|[^"])*)"',
+										   '"description":"Obfuscated description-' ||
+										   LENGTH(r.description) || '"')
+		WHERE r.TYPE_ID NOT IN (9, 10, 17, 23, 24, 28);
+		COMMIT;
+
+		/*update key, category of projects and trackers*/
+		UPDATE object_revision r
+			SET r.description = REGEXP_REPLACE(
+							  REGEXP_REPLACE(r.description, '"keyName":"[^"]*"', '"keyName":"K-' || r.proj_id || '"'),
+							  '"category":"[^"]*"', '"category":"TestCategory"')
+			WHERE r.type_id IN (22, 16);
+		COMMIT;
+
+		/*Update categoryName of project categories*/
+		UPDATE object_revision r
+		SET r.description = REGEXP_REPLACE(r.description, '"categoryName":"[^"]*"', '"categoryName":"' || r.name || '"')
+		WHERE r.type_id=42;
+		COMMIT;
+
+		/*delete simple comment message*/
+		UPDATE object_revision r
+		SET r.description = 'Obfuscated description-' || LENGTH(r.description)
+		WHERE r.type_id IN (13, 15)
+		  AND r.description IS NOT JSON;
+
+		/*delete description of : file, folder, baseline, user, tracker, dashboard*/
+		UPDATE object_revision r
+		SET r.description = NULL
+		WHERE r.type_id IN (1, 2, 12, 30, 31, 32, 34);
+		COMMIT;
+
+    END IF;
+  END;
+END replace_obfuscate_object_revision;
+/
+
 /*obfuscate acl role*/
 UPDATE acl_role
 SET name        = id,
@@ -81,79 +170,14 @@ WHERE name <> 'codeBeamer Review Project Review Role'
   AND name <> 'Stakeholder';
 COMMIT;
 
-/*object_reference*/
-UPDATE object_reference
-SET url = 'file://' || from_id
-WHERE url LIKE 'file://%';
-UPDATE object_reference
-SET url = 'mailto:' || from_id || '@testemail.testemail'
-WHERE url LIKE 'mailto:%';
-UPDATE object_reference
-SET url = '/' || from_id
-WHERE url LIKE '/%';
-
-/*obfuscate urls in wiki fields*/
-UPDATE object_reference
-SET url = 'url-something'
-WHERE to_id IS NULL
-AND to_type_id IS NULL
-AND assoc_id IS NULL
-AND field_id IS NOT NULL;
-
-/*obfuscate usernames in url*/
-update (select obj_ref.url, u.name, u.id from object_reference obj_ref inner join users u on LOWER(obj_ref.url) like u.name) 
-set url=replace(url, name, concat('user-', id));
-
+CALL replace_obfuscate_object_reference();
 COMMIT;
 
 /*remove all file content except: vintage reports, calendar, work calendars*/
 TRUNCATE TABLE object_revision_blobs;
 COMMIT;
 
-/*update name of artifacts except: calendars, work calendars, roles, groups, member group,
-  state transition, field definitions, choice option, release rank, review config,
-  review tracker, state transition, transition condition, workflow action, artifact file link*/
-UPDATE object_revision r
-SET r.name = r.object_id || '-artifact ' || substr(r.name, 1, 4) || ' :' || LENGTH(r.name)
-WHERE r.name NOT IN ('codeBeamer Review Project Review Tracker',
-                     'codeBeamer Review Project Review Item Tracker',
-                     'codeBeamer Review Project Review Config Template Tracker')
-  AND r.type_id NOT IN (9, 10, 17, 18, 19, 21, 23, 25, 26, 33, 35, 44);
-COMMIT;
-
-/*update description of artifacts, except: calendar, work calendar, association
-  state transition, transition condition, workflow action*/
-UPDATE object_revision r
-SET r.description = REGEXP_REPLACE(r.description, '"description":\s*"((\\"|[^"])*)"',
-                                   '"description":"Obfuscated description-' ||
-                                   LENGTH(r.description) || '"')
-WHERE r.TYPE_ID NOT IN (9, 10, 17, 23, 24, 28);
-COMMIT;
-
-/*update key, category of projects and trackers*/
-UPDATE object_revision r
-    SET r.description = REGEXP_REPLACE(
-                      REGEXP_REPLACE(r.description, '"keyName":"[^"]*"', '"keyName":"K-' || r.proj_id || '"'),
-                      '"category":"[^"]*"', '"category":"TestCategory"')
-    WHERE r.type_id IN (22, 16);
-COMMIT;
-
-/*Update categoryName of project categories*/
-UPDATE object_revision r
-SET r.description = REGEXP_REPLACE(r.description, '"categoryName":"[^"]*"', '"categoryName":"' || r.name || '"')
-WHERE r.type_id=42;
-COMMIT;
-
-/*delete simple comment message*/
-UPDATE object_revision r
-SET r.description = 'Obfuscated description-' || LENGTH(r.description)
-WHERE r.type_id IN (13, 15)
-  AND r.description IS NOT JSON;
-
-/*delete description of : file, folder, baseline, user, tracker, dashboard*/
-UPDATE object_revision r
-SET r.description = NULL
-WHERE r.type_id IN (1, 2, 12, 30, 31, 32, 34);
+CALL replace_obfuscate_object_revision();
 COMMIT;
 
 /*update user data*/

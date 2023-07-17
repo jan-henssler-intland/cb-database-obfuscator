@@ -1,50 +1,35 @@
 /*audit_trail*/
-DO $$
-<<audit_trail>>
+CREATE OR REPLACE PROCEDURE public.replace_obfuscate_users(
+	)
+LANGUAGE plpgsql
+AS $$
 	DECLARE obfuscate_audit_trial BOOLEAN DEFAULT FALSE;
 	DECLARE v_name VARCHAR(50);
 	DECLARE v_id INTEGER;
 	DECLARE c_user CURSOR FOR SELECT id, name FROM users;
 
 BEGIN
-IF obfuscate_audit_trial THEN
+	IF obfuscate_audit_trial THEN
 
-	OPEN c_user;
+		OPEN c_user;
 
-	LOOP
-		FETCH c_user INTO v_id, v_name;
-		EXIT WHEN NOT found;
+		LOOP
+			FETCH c_user INTO v_id, v_name;
+			EXIT WHEN NOT found;
 
-		-- "bond's personal wiki"
-		UPDATE audit_trail_logs SET details=replace(details, CONCAT('"', v_name, '''s Personal Wiki"'), CONCAT('"user-', v_id, '''s Personal Wiki"'));
+			-- "bond's personal wiki" OR -- "bond [1]" OR -- {"name":"bond","id":1} OR -- {"id":1,"name":"bond"}
+			UPDATE audit_trail_logs SET details=replace(
+													replace(
+														replace(
+															replace(details, CONCAT('{"id":', v_id, ',"name":"', v_name, '"}'), CONCAT('{"id":', v_id, ',"name":user-"', v_id, '"}')), 
+															CONCAT('{"name":"', v_name, '","id":', v_id, '}'), CONCAT('{"name":user-"', v_id, '","id":', v_id, '}')), 
+													CONCAT('"', v_name, ' [', v_id, ']"'), CONCAT('"user-', v_id, ' [', v_id, ']"')), 
+												CONCAT('"', v_name, '''s Personal Wiki"'), CONCAT('"user-', v_id, '''s Personal Wiki"'));
 
-		-- "bond [1]"
-		UPDATE audit_trail_logs SET details=replace(details, CONCAT('"', v_name, ' [', v_id, ']"'), CONCAT('"user-', v_id, ' [', v_id, ']"'));
-
-		-- {"name":"bond","id":1}
-		UPDATE audit_trail_logs SET details=replace(details, CONCAT('{"name":"', v_name, '","id":', v_id, '}'), CONCAT('{"name":user-"', v_id, '","id":', v_id, '}'));
-
-		-- {"id":1,"name":"bond"}
-		UPDATE audit_trail_logs SET details=replace(details, CONCAT('{"id":', v_id, ',"name":"', v_name, '"}'), CONCAT('{"id":', v_id, ',"name":user-"', v_id, '"}'));
-
-	END LOOP;
-	CLOSE c_user;
-END IF;
-END audit_trail $$;
-
-CREATE OR REPLACE FUNCTION RANDOM_STRING(p_LENGTH BIGINT)
-	RETURNS TEXT
-LANGUAGE plpgsql
-AS $$
-DECLARE
-	v_random_string TEXT;
-BEGIN
-  SELECT STRING_AGG (SUBSTR('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789', CEIL(RANDOM() * 62)::INTEGER, 1), '')
-  INTO v_random_string
-  FROM   GENERATE_SERIES(1, p_LENGTH);
-  RETURN v_random_string;
-END;
-$$;
+		END LOOP;
+		CLOSE c_user;
+	END IF;
+END $$;
 
 CREATE OR REPLACE FUNCTION IS_VALID_JSON(p_json TEXT)
 	RETURNS BOOLEAN
@@ -96,6 +81,110 @@ EXCEPTION
 END;
 $$;
 
+CREATE OR REPLACE FUNCTION RANDOM_STRING(p_LENGTH BIGINT)
+	RETURNS TEXT
+LANGUAGE plpgsql
+AS $$
+DECLARE
+	v_random_string TEXT;
+BEGIN
+  SELECT STRING_AGG (SUBSTR('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789', CEIL(RANDOM() * 62)::INTEGER, 1), '')
+  INTO v_random_string
+  FROM   GENERATE_SERIES(1, p_LENGTH);
+  RETURN v_random_string;
+END;
+$$;
+
+CREATE OR REPLACE PROCEDURE public.obfuscate_object_reference(
+	)
+LANGUAGE plpgsql
+AS $$
+
+	DECLARE obfuscate_object_reference BOOLEAN DEFAULT TRUE;
+
+BEGIN
+	IF obfuscate_object_reference THEN
+
+		/*object_reference*/
+		UPDATE object_reference SET url=CONCAT('file://', from_id) WHERE url LIKE 'file://%';
+		UPDATE object_reference SET url=CONCAT('mailto:', from_id, '@testemail.testemail') WHERE url LIKE 'mailto:%';
+		UPDATE object_reference SET url=CONCAT('/', from_id) WHERE url LIKE '\/%';
+
+		/*obfuscate urls in wiki fields*/
+		UPDATE object_reference
+		SET url = 'url-something'
+		WHERE to_id IS NULL
+		AND to_type_id IS NULL
+		AND assoc_id IS NULL
+		AND field_id IS NOT NULL;
+
+		/*obfuscate usernames in url*/
+		UPDATE object_reference obj
+		set url=replace(obj.url, u.name, concat('user-', u.id))
+		from object_reference obj_ref inner join users u on LOWER(obj_ref.url) like u.name;
+
+	END IF;
+END $$;
+
+CREATE OR REPLACE PROCEDURE public.obfuscate_object_revision(
+	)
+LANGUAGE plpgsql
+AS $$
+
+	DECLARE obfuscate_object_revision BOOLEAN DEFAULT TRUE;
+
+BEGIN
+	IF obfuscate_object_revision THEN
+
+		/*update name of artifacts except: calendars, work calendar, roles, groups,
+		  member group, state transition, field definitions, choice option,
+		  release rank, review config, review tracker, state transition, transition condition,
+		  workflow action, artifact file link*/
+		UPDATE object_revision r
+		SET name = CONCAT(r.object_id,'-artifact ', SUBSTR(r.name, 1, 4), ' :' , LENGTH(r.name))
+		WHERE r.name NOT IN ('codeBeamer Review Project Review Tracker', 'codeBeamer Review Project Review Item Tracker', 'codeBeamer Review Project Review Config Template Tracker')
+			AND r.type_id NOT IN (9, 10, 17, 18, 19, 21, 23, 24, 25, 26, 28, 33, 35, 44);
+
+
+		/*update description of artifacts, except: calendar, work calendar, state transition,
+		  transition condition, workflow action*/
+		UPDATE object_revision r
+		SET description = jsonb_set(r.description::JSONB,
+			'{description}',
+			CONCAT('"','Obfuscated description-',LENGTH(r.description::JSON ->> 'description'),'"')::JSONB, FALSE)
+		WHERE EXISTS(SELECT 1 FROM object o WHERE o.id = r.object_id AND o.type_id NOT IN (9, 10, 17, 23, 24, 28))
+			AND IS_VALID_JSON(r.description);
+
+		/*update key, category of projects and trackers*/
+
+		UPDATE object_revision r
+		SET description = jsonb_set(
+			jsonb_set(r.description::JSONB, '{keyName}', CONCAT('"K-',r.proj_id,'"')::JSONB, FALSE),
+			'{category}',
+			'"TestCategory"'::JSONB, FALSE)
+		WHERE r.type_id IN (22, 16)
+			AND IS_VALID_JSON(r.description);
+
+		/*Update categoryName of project categories*/
+		UPDATE object_revision r
+		SET description = jsonb_set(r.description::JSONB, '{categoryName}', CONCAT('"', r.name, '"')::JSONB, FALSE)
+		WHERE r.type_id = 42
+			AND IS_VALID_JSON(r.description);
+
+		/*delete simple comment message*/
+		UPDATE object_revision r
+		SET description = CONCAT('Obfuscated description-', LENGTH(r.description))
+		WHERE r.type_id IN (13, 15)
+			AND NOT IS_VALID_JSON(r.description);
+
+		/*delete description of : file, folder, baseline, user, tracker, dashboard*/
+		UPDATE object_revision r
+		SET description = NULL
+		WHERE r.type_id IN (1, 2, 12, 30, 31, 32, 34);
+
+	END IF;
+END $$;
+
 \set AUTOCOMMIT  FALSE
 
 /*obfuscate acl role*/
@@ -106,79 +195,14 @@ UPDATE acl_role SET name=id, description=NULL WHERE
     AND name <> 'Stakeholder';
 COMMIT;
 
-/*object_reference*/
-UPDATE object_reference SET url=CONCAT('file://', from_id) WHERE url LIKE 'file://%';
-UPDATE object_reference SET url=CONCAT('mailto:', from_id, '@testemail.testemail') WHERE url LIKE 'mailto:%';
-UPDATE object_reference SET url=CONCAT('/', from_id) WHERE url LIKE '\/%';
-
-/*obfuscate urls in wiki fields*/
-UPDATE object_reference
-SET url = 'url-something'
-WHERE to_id IS NULL
-AND to_type_id IS NULL
-AND assoc_id IS NULL
-AND field_id IS NOT NULL;
-
-/*obfuscate usernames in url*/
-UPDATE object_reference obj
-set url=replace(obj.url, u.name, concat('user-', u.id))
-from object_reference obj_ref inner join users u on LOWER(obj_ref.url) like u.name;
+call obfuscate_object_reference();
 COMMIT;
 
 /*remove all file content except: vintage reports, calendar, work calendar*/
 TRUNCATE object_revision_blobs;
 COMMIT;
 
-/*update name of artifacts except: calendars, work calendar, roles, groups,
-  member group, state transition, field definitions, choice option,
-  release rank, review config, review tracker, state transition, transition condition,
-  workflow action, artifact file link*/
-UPDATE object_revision r
-SET name = CONCAT(r.object_id,'-artifact ', SUBSTR(r.name, 1, 4), ' :' , LENGTH(r.name))
-WHERE r.name NOT IN ('codeBeamer Review Project Review Tracker', 'codeBeamer Review Project Review Item Tracker', 'codeBeamer Review Project Review Config Template Tracker')
-	AND r.type_id NOT IN (9, 10, 17, 18, 19, 21, 23, 24, 25, 26, 28, 33, 35, 44);
-COMMIT;
-
-
-/*update description of artifacts, except: calendar, work calendar, state transition,
-  transition condition, workflow action*/
-UPDATE object_revision r
-SET description = jsonb_set(r.description::JSONB,
-    '{description}',
-    CONCAT('"','Obfuscated description-',LENGTH(r.description::JSON ->> 'description'),'"')::JSONB, FALSE)
-WHERE EXISTS(SELECT 1 FROM object o WHERE o.id = r.object_id AND o.type_id NOT IN (9, 10, 17, 23, 24, 28))
-	AND IS_VALID_JSON(r.description);
-COMMIT;
-
-/*update key, category of projects and trackers*/
-
-UPDATE object_revision r
-SET description = jsonb_set(
-	jsonb_set(r.description::JSONB, '{keyName}', CONCAT('"K-',r.proj_id,'"')::JSONB, FALSE),
-	'{category}',
-	'"TestCategory"'::JSONB, FALSE)
-WHERE r.type_id IN (22, 16)
-	AND IS_VALID_JSON(r.description);
-COMMIT;
-
-/*Update categoryName of project categories*/
-UPDATE object_revision r
-SET description = jsonb_set(r.description::JSONB, '{categoryName}', CONCAT('"', r.name, '"')::JSONB, FALSE)
-WHERE r.type_id = 42
-	AND IS_VALID_JSON(r.description);
-COMMIT;
-
-/*delete simple comment message*/
-UPDATE object_revision r
-SET description = CONCAT('Obfuscated description-', LENGTH(r.description))
-WHERE r.type_id IN (13, 15)
-	AND NOT IS_VALID_JSON(r.description);
-COMMIT;
-
-/*delete description of : file, folder, baseline, user, tracker, dashboard*/
-UPDATE object_revision r
-SET description = NULL
-WHERE r.type_id IN (1, 2, 12, 30, 31, 32, 34);
+call obfuscate_object_revision();
 COMMIT;
 
 CREATE TEMPORARY TABLE IF NOT EXISTS tmp_jira AS (
