@@ -160,6 +160,120 @@ BEGIN
 END replace_obfuscate_object_revision;
 /
 
+CREATE or REPLACE PROCEDURE obfuscate_task_summary_details as
+BEGIN
+  DECLARE
+    obfuscate_task_summary_details BOOLEAN DEFAULT TRUE;
+   BEGIN
+    IF obfuscate_task_summary_details
+    THEN
+		/*update task summary and description*/
+		UPDATE task
+		SET summary = 'Task' || id || ' ' || substr(summary, 1, 4) || ' :' || LENGTH(summary)
+		WHERE summary IS NOT NULL;
+		COMMIT;
+
+		UPDATE task
+		SET details = TO_CHAR(LENGTH(details))
+		WHERE details IS NOT NULL;
+		COMMIT;
+    END IF;
+  END;
+END obfuscate_task_summary_details;
+/
+
+CREATE or REPLACE PROCEDURE obfuscate_task_search_history as
+BEGIN
+  DECLARE
+    obfuscate_task_search_history BOOLEAN DEFAULT TRUE;
+   BEGIN
+    IF obfuscate_task_search_history
+    THEN
+		/*update task summary*/
+		UPDATE task_search_history
+		SET summary = 'Task' || id || ' ' || substr(summary, 1, 4) || ' :' || LENGTH(summary)
+		WHERE summary IS NOT NULL;
+		COMMIT;
+    END IF;
+  END;
+END obfuscate_task_search_history;
+/
+
+CREATE or REPLACE PROCEDURE obfuscate_task_field_value as
+BEGIN
+  DECLARE
+    obfuscate_task_field_value BOOLEAN DEFAULT TRUE;
+   BEGIN
+    IF obfuscate_task_field_value
+    THEN
+		/*UPDATE custom field value (not choice data)*/
+		UPDATE task_field_value
+		SET field_value = (
+			CASE
+			  WHEN TRIM(TRANSLATE(substr(field_value, 1, 100), '0123456789-,.', ' ')) IS NULL
+					  THEN '1'
+			  ELSE TO_CHAR(substr(field_value, 1, 2) || ' :' || LENGTH(field_value))
+				END)
+		WHERE field_value IS NOT NULL
+			AND (label_id IN (3, 80) OR (label_id >= 1000 AND SHOULD_OBFUSCATE(field_value, label_id) = 1));
+		COMMIT;
+    END IF;
+  END;
+END obfuscate_task_field_value;
+/
+
+CREATE or REPLACE PROCEDURE obfuscate_task_field_history as
+BEGIN
+  DECLARE
+    obfuscate_task_field_history BOOLEAN DEFAULT TRUE;
+   BEGIN
+    IF obfuscate_task_field_history
+    THEN
+		/*UPDATE summary, description and custom field value*/
+		UPDATE task_field_history
+		SET old_value = (
+			CASE
+			  WHEN old_value IS NOT NULL AND SHOULD_OBFUSCATE(old_value, label_id) = 1 THEN (
+				CASE
+				  WHEN TRIM(TRANSLATE(substr(old_value, 1, 100), '0123456789-,.', ' ')) IS NULL
+						  THEN TO_CHAR(revision - 1)
+				  ELSE TO_CHAR(substr(old_value, 1, 2) || ' :' || LENGTH(old_value))
+					END)
+			  ELSE NULL END
+			),
+			new_value = (
+				CASE
+				  WHEN new_value IS NOT NULL AND SHOULD_OBFUSCATE(old_value, label_id) = 1 THEN (
+					CASE
+					  WHEN TRIM(TRANSLATE(substr(new_value, 1, 100), '0123456789-,.', ' ')) IS NULL
+							  THEN TO_CHAR(revision)
+					  ELSE TO_CHAR(substr(new_value, 1, 2) || ' :' || LENGTH(new_value))
+						END)
+				  ELSE NULL END
+				)
+		WHERE label_id IN (3, 80) OR label_id >= 10000;
+		COMMIT;
+    END IF;
+  END;
+END obfuscate_task_field_history;
+/
+
+CREATE or REPLACE PROCEDURE obfuscate_task_type as
+BEGIN
+  DECLARE
+    obfuscate_task_type BOOLEAN DEFAULT TRUE;
+   BEGIN
+    IF obfuscate_task_type
+    THEN
+		/*TASK_TYPE reduce prefix to 2 characters*/
+		UPDATE task_type
+		SET prefix = substr(prefix, 1, 2);
+		COMMIT;
+    END IF;
+  END;
+END obfuscate_task_type;
+/
+
 /*obfuscate acl role*/
 UPDATE acl_role
 SET name        = id,
@@ -244,63 +358,19 @@ TRUNCATE TABLE object_job_schedule;
 COMMIT;
 
 /*update task summary and description*/
-UPDATE task
-SET summary = 'Task' || id || ' ' || substr(summary, 1, 4) || ' :' || LENGTH(summary)
-WHERE summary IS NOT NULL;
-COMMIT;
-
-UPDATE task
-SET details = TO_CHAR(LENGTH(details))
-WHERE details IS NOT NULL;
-COMMIT;
+CALL obfuscate_task_summary_details();
 
 /*update task summary*/
-UPDATE task_search_history
-SET summary = 'Task' || id || ' ' || substr(summary, 1, 4) || ' :' || LENGTH(summary)
-WHERE summary IS NOT NULL;
-COMMIT;
+CALL obfuscate_task_search_history();
 
 /*UPDATE custom field value (not choice data)*/
-UPDATE task_field_value
-SET field_value = (
-    CASE
-      WHEN TRIM(TRANSLATE(substr(field_value, 1, 100), '0123456789-,.', ' ')) IS NULL
-              THEN '1'
-      ELSE TO_CHAR(substr(field_value, 1, 2) || ' :' || LENGTH(field_value))
-        END)
-WHERE field_value IS NOT NULL
-    AND (label_id IN (3, 80) OR (label_id >= 1000 AND SHOULD_OBFUSCATE(field_value, label_id) = 1));
-COMMIT;
+CALL obfuscate_task_field_value();
 
 /*UPDATE summary, description and custom field value*/
-UPDATE task_field_history
-SET old_value = (
-    CASE
-      WHEN old_value IS NOT NULL AND SHOULD_OBFUSCATE(old_value, label_id) = 1 THEN (
-        CASE
-          WHEN TRIM(TRANSLATE(substr(old_value, 1, 100), '0123456789-,.', ' ')) IS NULL
-                  THEN TO_CHAR(revision - 1)
-          ELSE TO_CHAR(substr(old_value, 1, 2) || ' :' || LENGTH(old_value))
-            END)
-      ELSE NULL END
-    ),
-    new_value = (
-        CASE
-          WHEN new_value IS NOT NULL AND SHOULD_OBFUSCATE(old_value, label_id) = 1 THEN (
-            CASE
-              WHEN TRIM(TRANSLATE(substr(new_value, 1, 100), '0123456789-,.', ' ')) IS NULL
-                      THEN TO_CHAR(revision)
-              ELSE TO_CHAR(substr(new_value, 1, 2) || ' :' || LENGTH(new_value))
-                END)
-          ELSE NULL END
-        )
-WHERE label_id IN (3, 80) OR label_id >= 10000;
-COMMIT;
+CALL obfuscate_task_field_history();
 
 /*TASK_TYPE reduce prefix to 2 characters*/
-UPDATE task_type
-SET prefix = substr(prefix, 1, 2);
-COMMIT;
+CALL obfuscate_task_type();
 
 /*remove report jobs*/
 TRUNCATE TABLE object_quartz_schedule;

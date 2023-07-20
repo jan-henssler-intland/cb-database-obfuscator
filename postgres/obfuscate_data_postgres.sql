@@ -185,6 +185,108 @@ BEGIN
 	END IF;
 END $$;
 
+CREATE OR REPLACE PROCEDURE public.obfuscate_task_summary_details(
+	)
+LANGUAGE plpgsql
+AS $$
+	DECLARE obfuscate_task_summary_details BOOLEAN DEFAULT TRUE;
+BEGIN
+	IF obfuscate_task_summary_details THEN
+		/*update task summary and description*/
+		UPDATE task
+		SET summary = CONCAT('Task',id,' ', SUBSTR(summary, 1, 4), ' :' ,LENGTH(summary))
+		WHERE summary IS NOT NULL;
+
+		UPDATE task
+		SET details = CAST(LENGTH(details) AS VARCHAR)
+		WHERE details IS NOT NULL;
+	END IF;
+END $$;
+
+CREATE OR REPLACE PROCEDURE public.obfuscate_task_search_history_summary(
+	)
+LANGUAGE plpgsql
+AS $$
+	DECLARE obfuscate_task_search_history_summary BOOLEAN DEFAULT TRUE;
+BEGIN
+	IF obfuscate_task_search_history_summary THEN
+		/*update task summary*/
+		UPDATE task_search_history
+		SET summary = CONCAT('Task', id, ' ', SUBSTR(summary, 1, 4), ' :', LENGTH(summary))
+		WHERE summary IS NOT NULL;
+	END IF;
+END $$;
+
+CREATE OR REPLACE PROCEDURE public.obfuscate_task_field_value(
+	)
+LANGUAGE plpgsql
+AS $$
+	DECLARE obfuscate_task_field_value BOOLEAN DEFAULT TRUE;
+BEGIN
+	IF obfuscate_task_field_value THEN
+		/*update task summary and description*/
+		UPDATE task_field_value
+		SET field_value = (
+			CASE
+				WHEN TRIM(TRANSLATE(SUBSTR(field_value, 1, 100), '0123456789-,.', ' ')) IS NULL
+					THEN '1'
+				ELSE CONCAT(SUBSTR(field_value, 1, 2), ' :', LENGTH(field_value))
+				END)
+		WHERE field_value IS NOT NULL
+		  AND SHOULD_OBFUSCATE(field_value, label_id)
+		  AND (label_id in (3, 80) OR label_id >= 1000);
+	END IF;
+END $$;
+
+CREATE OR REPLACE PROCEDURE public.obfuscate_task_field_history(
+	)
+LANGUAGE plpgsql
+AS $$
+	DECLARE obfuscate_task_field_history_value BOOLEAN DEFAULT TRUE;
+BEGIN
+	IF obfuscate_task_field_history_value THEN
+		/*UPDATE summary, description and custom field value*/
+		UPDATE task_field_history
+		SET old_value = (
+			CASE
+				WHEN old_value IS NOT NULL AND SHOULD_OBFUSCATE(old_value, label_id) THEN (
+					CASE
+						WHEN TRIM(TRANSLATE(SUBSTR(old_value, 1, 100), '0123456789-,.', ' ')) IS NULL
+							THEN CAST(revision - 1 AS TEXT)
+						ELSE CONCAT(SUBSTR(old_value, 1, 2), ' :', LENGTH(old_value))
+						END)
+				ELSE old_value
+				END
+			),
+			new_value = (
+				CASE
+					WHEN new_value IS NOT NULL AND SHOULD_OBFUSCATE(new_value, label_id) THEN (
+						CASE
+							WHEN TRIM(TRANSLATE(SUBSTR(new_value, 1, 100), '0123456789-,.', ' ')) IS NULL
+								THEN CAST(revision AS TEXT)
+							ELSE CONCAT(SUBSTR(new_value, 1, 2), ' :', LENGTH(new_value))
+							END)
+					ELSE new_value
+					END
+				)
+		WHERE label_id IN (3, 80)
+		   OR (label_id >= 1000);
+	END IF;
+END $$;
+
+CREATE OR REPLACE PROCEDURE public.obfuscate_task_type(
+	)
+LANGUAGE plpgsql
+AS $$
+	DECLARE obfuscate_task_type BOOLEAN DEFAULT TRUE;
+BEGIN
+	IF obfuscate_task_type THEN
+		/*TASK_TYPE reduce prefix to 2 characters*/
+		UPDATE task_type SET prefix=SUBSTR(prefix, 1, 2);
+		COMMIT;	
+	END IF;
+END $$;
+
 \set AUTOCOMMIT  FALSE
 
 /*obfuscate acl role*/
@@ -284,88 +386,39 @@ SET name = CONCAT('Project',proj_id),
 WHERE name <> 'codeBeamer Review Project';
 COMMIT;
 
-
 /*remove jira synch*/
 TRUNCATE TABLE object_job_schedule;
 COMMIT;
 
 /*update task summary and description*/
-UPDATE task
-SET summary = CONCAT('Task',id,' ', SUBSTR(summary, 1, 4), ' :' ,LENGTH(summary))
-WHERE summary IS NOT NULL;
-COMMIT;
-
-
-UPDATE task
-SET details = CAST(LENGTH(details) AS VARCHAR)
-WHERE details IS NOT NULL;
+CALL obfuscate_task_summary_details();
 COMMIT;
 
 /*update task summary*/
-UPDATE task_search_history
-SET summary = CONCAT('Task', id, ' ', SUBSTR(summary, 1, 4), ' :', LENGTH(summary))
-WHERE summary IS NOT NULL;
+CALL obfuscate_task_search_history_summary();
 COMMIT;
 
 /*UPDATE custom field value (not choice data)*/
-
-UPDATE task_field_value
-SET field_value = (
-    CASE
-        WHEN TRIM(TRANSLATE(SUBSTR(field_value, 1, 100), '0123456789-,.', ' ')) IS NULL
-            THEN '1'
-        ELSE CONCAT(SUBSTR(field_value, 1, 2), ' :', LENGTH(field_value))
-        END)
-WHERE field_value IS NOT NULL
-  AND SHOULD_OBFUSCATE(field_value, label_id)
-  AND (label_id in (3, 80) OR label_id >= 1000);
+CALL obfuscate_task_field_value();
 COMMIT;
 
-
-/*UPDATE summary, description and custom field value*/
-UPDATE task_field_history
-SET old_value = (
-    CASE
-        WHEN old_value IS NOT NULL AND SHOULD_OBFUSCATE(old_value, label_id) THEN (
-            CASE
-                WHEN TRIM(TRANSLATE(SUBSTR(old_value, 1, 100), '0123456789-,.', ' ')) IS NULL
-                    THEN CAST(revision - 1 AS TEXT)
-                ELSE CONCAT(SUBSTR(old_value, 1, 2), ' :', LENGTH(old_value))
-                END)
-        ELSE old_value
-        END
-    ),
-    new_value = (
-        CASE
-            WHEN new_value IS NOT NULL AND SHOULD_OBFUSCATE(new_value, label_id) THEN (
-                CASE
-                    WHEN TRIM(TRANSLATE(SUBSTR(new_value, 1, 100), '0123456789-,.', ' ')) IS NULL
-                        THEN CAST(revision AS TEXT)
-                    ELSE CONCAT(SUBSTR(new_value, 1, 2), ' :', LENGTH(new_value))
-                    END)
-            ELSE new_value
-            END
-        )
-WHERE label_id IN (3, 80)
-   OR (label_id >= 1000);
+/*UPDATE old value and new value*/
+CALL obfuscate_task_field_history();
 COMMIT;
-
 
 /*TASK_TYPE reduce prefix to 2 characters*/
-UPDATE task_type SET prefix=SUBSTR(prefix, 1, 2);
+CALL obfuscate_task_type();
 COMMIT;
 
 /*remove report jobs*/
 TRUNCATE TABLE object_quartz_schedule;
 COMMIT;
 
-
 /*UPDATE tag name*/
 UPDATE label
 SET name = CONCAT('LABEL', id)
 WHERE name NOT IN ('FINISHED_TESTRUN_GENERATION');
 COMMIT;
-
 
 UPDATE workingset
 SET name = CONCAT('WS-', id), description = NULL
