@@ -28,31 +28,18 @@ BEGIN
                 LEAVE replace_user;
             END IF;
 
-            -- "bond's personal wiki"
+            -- "bond's personal wiki" OR -- "bond [1]" OR -- {"name":"bond","id":1} OR -- {"id":1,"name":"bond"}
             UPDATE audit_trail_logs
-            SET details = replace(details, concat('"', v_name, '\'s Personal Wiki"'),
+            SET details = replace(replace(replace(replace(details, concat('{"id":', v_id, ',"name":"', v_name, '"}'),
+                                  concat('{"id":', v_id, ',"name":user-"', v_id, '"}')), concat('{"name":"', v_name, '","id":', v_id, '}'),
+                                  concat('{"name":user-"', v_id, '","id":', v_id, '}')), concat('"', v_name, ' [', v_id, ']"'),
+                                  concat('"user-', v_id, ' [', v_id, ']"')), concat('"', v_name, '\'s Personal Wiki"'),
                                   concat('"user-', v_id, '\'s Personal Wiki"'));
-
-            -- "bond [1]"
-            UPDATE audit_trail_logs
-            SET details = replace(details, concat('"', v_name, ' [', v_id, ']"'),
-                                  concat('"user-', v_id, ' [', v_id, ']"'));
-
-            -- {"name":"bond","id":1}
-            UPDATE audit_trail_logs
-            SET details = replace(details, concat('{"name":"', v_name, '","id":', v_id, '}'),
-                                  concat('{"name":user-"', v_id, '","id":', v_id, '}'));
-
-            -- {"id":1,"name":"bond"}
-            UPDATE audit_trail_logs
-            SET details = replace(details, concat('{"id":', v_id, ',"name":"', v_name, '"}'),
-                                  concat('{"id":', v_id, ',"name":user-"', v_id, '"}'));
 
         END LOOP replace_user;
 
         CLOSE c_user;
     END IF;
-
 END;
 //
 DROP FUNCTION IF EXISTS translate//
@@ -139,6 +126,217 @@ BEGIN
         return 0;
     END IF;
 END//
+
+DROP PROCEDURE IF EXISTS obfuscate_object_reference;
+//
+CREATE PROCEDURE obfuscate_object_reference()
+BEGIN
+    DECLARE obfuscate_object_reference BOOLEAN DEFAULT TRUE;
+    IF obfuscate_object_reference
+    THEN
+        /*object_reference*/
+		UPDATE object_reference
+		SET url = concat('file://', from_id)
+		WHERE url LIKE 'file://%';
+		UPDATE object_reference
+		SET url = concat('mailto:', from_id, '@testemail.testemail')
+		WHERE url LIKE 'mailto:%';
+		UPDATE object_reference
+		SET url = concat('/', from_id)
+		WHERE url LIKE '\/%';
+
+		/*obfuscate urls in wiki fields*/
+		UPDATE object_reference
+		SET url = 'url-something'
+		WHERE to_id IS NULL
+		AND to_type_id IS NULL
+		AND assoc_id IS NULL
+		AND field_id IS NOT NULL;
+
+		/*obfuscate usernames in url*/
+		UPDATE object_reference ref
+		inner join users u
+		on lower(ref.url)
+		like u.name
+		set url=replace(url, u.name, concat('user-', u.id));
+
+    END IF;
+END;
+//
+
+DROP PROCEDURE IF EXISTS obfuscate_object_revision;
+//
+CREATE PROCEDURE obfuscate_object_revision()
+BEGIN
+    DECLARE obfuscate_object_revision BOOLEAN DEFAULT TRUE;
+    IF obfuscate_object_revision
+    THEN
+        /*update name of artifacts except: calendars, work calendars, roles, groups, member group, state transition, field definitions, choice option, release rank, review config, review tracker, review config template tracker, artifact file link*/
+		UPDATE object_revision r
+		SET r.name = concat(r.object_id, '-artifact ', substr(r.name, 1, 4), ' :', LENGTH(r.name))
+		WHERE r.name NOT IN ('codeBeamer Review Project Review Tracker',
+							 'codeBeamer Review Project Review Item Tracker',
+							 'codeBeamer Review Project Review Config Template Tracker')
+		  AND r.type_id NOT IN (9, 10, 17, 18, 19, 21, 23, 25, 26, 33, 35, 44);
+
+		COMMIT;
+
+		/*update description of artifacts, except: calendar, work calendar, association*/
+		UPDATE object_revision r
+		SET r.description = JSON_REPLACE(r.description,
+										 '$.description',
+										 concat('Obfuscated description-',
+												LENGTH(r.description)))
+		WHERE r.type_id NOT IN (9, 10, 17, 23, 24, 28)
+		  AND JSON_VALID(r.description);
+		COMMIT;
+
+		/*update key, category of projects and trackers*/
+		UPDATE object_revision r
+		SET r.description = JSON_REPLACE(r.description,
+										 '$.keyName',
+										 concat('K-', r.proj_id),
+										 '$.category',
+										 'TestCategory')
+		WHERE r.type_id IN (22, 16)
+		  AND JSON_VALID(r.description);
+		COMMIT;
+
+		/*Update categoryName of project categories*/
+		UPDATE object_revision r
+		SET r.description = JSON_REPLACE(r.description, '$.categoryName', r.name)
+		WHERE r.type_id = 42
+		  AND JSON_VALID(r.description);
+		COMMIT;
+
+		/*delete simple comment message*/
+		UPDATE object_revision r
+		SET r.description = CONCAT('Obfuscated description-', LENGTH(r.description))
+		WHERE r.type_id IN (13, 15)
+		  AND NOT JSON_VALID(r.description);
+		COMMIT;
+
+		/*delete description of : file, folder, baseline, user, tracker, dashboard*/
+		UPDATE object_revision r
+		SET r.description = NULL
+		WHERE r.type_id IN (1, 2, 12, 30, 31, 32, 34);
+		COMMIT;
+
+    END IF;
+END;
+//
+
+DROP PROCEDURE IF EXISTS obfuscate_task_summary_details;
+//
+CREATE PROCEDURE obfuscate_task_summary_details()
+BEGIN
+    DECLARE obfuscate_task_summary_details BOOLEAN DEFAULT TRUE;
+    IF obfuscate_task_summary_details
+    THEN
+		/*update task summary and description*/
+		UPDATE task
+		SET summary = concat('Task', id, ' ', substr(summary, 1, 4), ' :', LENGTH(summary))
+		WHERE summary IS NOT NULL;
+		COMMIT;
+
+		UPDATE task
+		SET details = CONVERT(LENGTH(details), CHAR)
+		WHERE details IS NOT NULL;
+		COMMIT;
+	END IF;
+END;
+//
+
+DROP PROCEDURE IF EXISTS obfuscate_task_search_history;
+//
+CREATE PROCEDURE obfuscate_task_search_history()
+BEGIN
+    DECLARE obfuscate_task_search_history BOOLEAN DEFAULT TRUE;
+    IF obfuscate_task_search_history
+    THEN
+		/*update task summary*/
+		UPDATE task_search_history
+		SET summary = concat('Task', id, ' ', substr(summary, 1, 4), ' :', LENGTH(summary))
+		WHERE summary IS NOT NULL;
+		COMMIT;
+	END IF;
+END;
+//
+
+DROP PROCEDURE IF EXISTS obfuscate_task_field_value;
+//
+CREATE PROCEDURE obfuscate_task_field_value()
+BEGIN
+    DECLARE obfuscate_task_field_value BOOLEAN DEFAULT TRUE;
+    IF obfuscate_task_field_value
+    THEN
+		/*UPDATE custom field value (not choice data)*/
+		UPDATE task_field_value
+		SET field_value = (
+			CASE
+				WHEN TRIM(TRANSLATE(substr(field_value, 1, 100), '0123456789-,.', ' ')) IS NULL
+					THEN '1'
+				ELSE concat(substr(field_value, 1, 2), ' :', LENGTH(field_value))
+				END)
+		WHERE field_value IS NOT NULL
+		  AND should_obfuscate(field_value, label_id)
+		  AND (label_id in (3, 80) OR label_id >= 1000);
+		COMMIT;
+	END IF;
+END;
+//
+
+DROP PROCEDURE IF EXISTS obfuscate_task_field_history;
+//
+CREATE PROCEDURE obfuscate_task_field_history()
+BEGIN
+    DECLARE obfuscate_task_field_history BOOLEAN DEFAULT TRUE;
+    IF obfuscate_task_field_history
+    THEN
+		/*UPDATE summary, description and custom field value*/
+		UPDATE task_field_history
+		SET old_value = (
+			CASE
+				WHEN old_value IS NOT NULL AND should_obfuscate(old_value, label_id) THEN (
+					CASE
+						WHEN TRIM(TRANSLATE(substr(old_value, 1, 100), '0123456789-,.', ' ')) IS NULL
+							THEN revision - 1
+						ELSE concat(substr(old_value, 1, 2), ' :', LENGTH(old_value))
+						END)
+				ELSE old_value END
+			),
+			new_value = (
+				CASE
+					WHEN new_value IS NOT NULL and should_obfuscate(new_value, label_id) THEN (
+						CASE
+							WHEN TRIM(TRANSLATE(substr(new_value, 1, 100), '0123456789-,.', ' ')) IS NULL
+								THEN revision
+							ELSE concat(substr(new_value, 1, 2), ' :', LENGTH(new_value))
+							END)
+					ELSE new_value END
+				)
+		WHERE label_id IN (3, 80)
+		   OR (label_id >= 1000);
+		COMMIT;
+	END IF;
+END;
+//
+
+DROP PROCEDURE IF EXISTS obfuscate_task_type;
+//
+CREATE PROCEDURE obfuscate_task_type()
+BEGIN
+    DECLARE obfuscate_task_type BOOLEAN DEFAULT TRUE;
+    IF obfuscate_task_type
+    THEN
+		/*TASK_TYPE reduce prefix to 2 characters*/
+		UPDATE task_type
+		SET prefix = substr(prefix, 1, 2);
+		COMMIT;
+	END IF;
+END;
+//
+
 DELIMITER ;
 
 SET AUTOCOMMIT = 0;
@@ -152,74 +350,36 @@ WHERE name <> 'codeBeamer Review Project Review Role'
   AND name <> 'Developer'
   AND name <> 'Stakeholder';
 
-/*object_reference*/
-UPDATE object_reference
-SET url = concat('file://', from_id)
-WHERE url LIKE 'file://%';
-UPDATE object_reference
-SET url = concat('mailto:', from_id, '@testemail.testemail')
-WHERE url LIKE 'mailto:%';
-UPDATE object_reference
-SET url = concat('/', from_id)
-WHERE url LIKE '\/%';
-
-
+CALL obfuscate_object_reference();
 COMMIT;
 
 /*in mysql it's not supported*/
 truncate table object_revision_blobs;
 COMMIT;
 
-/*update name of artifacts except: calendars, work calendars, roles, groups, member group, state transition, field definitions, choice option, release rank, review config, review tracker, review config template tracker, artifact file link*/
-UPDATE object_revision r
-SET r.name = concat(r.object_id, '-artifact ', substr(r.name, 1, 4), ' :', LENGTH(r.name))
-WHERE r.name NOT IN ('codeBeamer Review Project Review Tracker',
-                     'codeBeamer Review Project Review Item Tracker',
-                     'codeBeamer Review Project Review Config Template Tracker')
-  AND r.type_id NOT IN (9, 10, 17, 18, 19, 21, 23, 25, 26, 33, 35, 44);
-
+CALL obfuscate_object_revision();
 COMMIT;
 
-/*update description of artifacts, except: calendar, work calendar, association*/
-UPDATE object_revision r
-SET r.description = JSON_REPLACE(r.description,
-                                 '$.description',
-                                 concat('Obfuscated description',
-                                        random_string(22)))
-WHERE r.type_id NOT IN (9, 10, 17, 23, 24, 28)
-  AND JSON_VALID(r.description);
+/*Clear the JIRA or DOORs history entry*/
+CREATE TEMPORARY TABLE IF NOT EXISTS tmp_jira ENGINE=MEMORY AS (
+SELECT REF.assoc_id FROM object_reference REF
+         INNER JOIN object TRK
+                    ON TRK.id = REF.to_id
+         INNER JOIN existing PRJ
+                    ON PRJ.proj_id = TRK.proj_id
+         INNER JOIN object_revision REV
+                    ON REV.object_id = TRK.id
+                        AND REV.revision = TRK.revision
+         INNER JOIN object ASSOC
+                    ON ASSOC.id = REF.assoc_id
+         INNER JOIN object_revision ARV
+                    ON ARV.object_id = ASSOC.id
+                        AND ARV.revision = ASSOC.revision
+WHERE REF.from_type_id IN (2277294, 65231461)
+  AND REF.to_type_id = 3
+);
 
-COMMIT;
-
-/*update key, category of projects and trackers*/
-UPDATE object_revision r
-SET r.description = JSON_REPLACE(r.description,
-                                 '$.keyName',
-                                 concat('K-', r.proj_id),
-                                 '$.category',
-                                 'TestCategory')
-WHERE r.type_id IN (22, 16)
-  AND JSON_VALID(r.description);
-
-COMMIT;
-
-/*Update categoryName of project categories*/
-UPDATE object_revision r
-SET r.description = JSON_REPLACE(r.description, '$.categoryName', r.name)
-WHERE r.type_id = 42
-  AND JSON_VALID(r.description);
-
-/*delete simple comment message*/
-UPDATE object_revision r
-SET r.description = CONCAT('Obfuscated description-', LENGTH(r.description))
-WHERE r.type_id IN (13, 15)
-  AND NOT JSON_VALID(r.description);
-
-/*delete description of : file, folder, baseline*/
-UPDATE object_revision r
-SET r.description = NULL
-WHERE r.type_id IN (1, 2, 12, 34);
-
+UPDATE object_revision SET description = NULL WHERE object_id IN ( SELECT assoc_id FROM tmp_jira );
 COMMIT;
 
 CALL replace_obfuscated_user();
@@ -289,61 +449,19 @@ TRUNCATE TABLE object_job_schedule;
 COMMIT;
 
 /*update task summary and description*/
-UPDATE task
-SET summary = concat('Task', id, ' ', substr(summary, 1, 4), ' :', LENGTH(summary))
-WHERE summary IS NOT NULL;
-COMMIT;
+CALL obfuscate_task_summary_details();
 
-UPDATE task
-SET details = CONVERT(LENGTH(details), CHAR)
-WHERE details IS NOT NULL;
-COMMIT;
+/*update task summary*/
+CALL obfuscate_task_search_history();
 
 /*UPDATE custom field value (not choice data)*/
-
-UPDATE task_field_value
-SET field_value = (
-    CASE
-        WHEN TRIM(TRANSLATE(substr(field_value, 1, 100), '0123456789-,.', ' ')) IS NULL
-            THEN '1'
-        ELSE concat(substr(field_value, 1, 2), ' :', LENGTH(field_value))
-        END)
-WHERE field_value IS NOT NULL
-  AND should_obfuscate(field_value, label_id)
-  AND (label_id in (3, 80) OR label_id >= 1000);
-COMMIT;
+CALL obfuscate_task_field_value();
 
 /*UPDATE summary, description and custom field value*/
-
-UPDATE task_field_history
-SET old_value = (
-    CASE
-        WHEN old_value IS NOT NULL AND should_obfuscate(old_value, label_id) THEN (
-            CASE
-                WHEN TRIM(TRANSLATE(substr(old_value, 1, 100), '0123456789-,.', ' ')) IS NULL
-                    THEN revision - 1
-                ELSE concat(substr(old_value, 1, 2), ' :', LENGTH(old_value))
-                END)
-        ELSE old_value END
-    ),
-    new_value = (
-        CASE
-            WHEN new_value IS NOT NULL and should_obfuscate(new_value, label_id) THEN (
-                CASE
-                    WHEN TRIM(TRANSLATE(substr(new_value, 1, 100), '0123456789-,.', ' ')) IS NULL
-                        THEN revision
-                    ELSE concat(substr(new_value, 1, 2), ' :', LENGTH(new_value))
-                    END)
-            ELSE new_value END
-        )
-WHERE label_id IN (3, 80)
-   OR (label_id >= 1000);
-COMMIT;
+CALL obfuscate_task_field_history();
 
 /*TASK_TYPE reduce prefix to 2 characters*/
-UPDATE task_type
-SET prefix = substr(prefix, 1, 2);
-COMMIT;
+CALL obfuscate_task_type();
 
 /*remove report jobs*/
 TRUNCATE TABLE object_quartz_schedule;
@@ -361,10 +479,63 @@ SET name        = concat('WS-', id),
 WHERE name != 'member';
 COMMIT;
 
+SET FOREIGN_KEY_CHECKS = 0;
+TRUNCATE table background_job;
+SET FOREIGN_KEY_CHECKS = 1;
+COMMIT;
+
+SET FOREIGN_KEY_CHECKS = 0;
+TRUNCATE table background_step;
+SET FOREIGN_KEY_CHECKS = 1;
+COMMIT;
+
+TRUNCATE TABLE document_cache_data_blobs;
+COMMIT;
+
+SET FOREIGN_KEY_CHECKS = 0;
+TRUNCATE table document_cache_data;
+SET FOREIGN_KEY_CHECKS = 1;
+COMMIT;
+
+TRUNCATE TABLE background_job_meta;
+COMMIT;
+
+TRUNCATE TABLE background_step_result;
+COMMIT;
+
+TRUNCATE TABLE background_step_context;
+COMMIT;
+
+TRUNCATE TABLE qrtz_blob_triggers;
+COMMIT;
+
+TRUNCATE TABLE qrtz_calendars;
+COMMIT;
+
+TRUNCATE TABLE qrtz_cron_triggers;
+COMMIT;
+
+TRUNCATE TABLE qrtz_fired_triggers;
+COMMIT;
+
+TRUNCATE TABLE qrtz_locks;
+COMMIT;
+
+TRUNCATE TABLE qrtz_paused_trigger_grps;
+COMMIT;
+
+TRUNCATE TABLE qrtz_scheduler_state;
+COMMIT;
+
+TRUNCATE TABLE qrtz_simple_triggers;
+COMMIT;
+
+TRUNCATE TABLE qrtz_simprop_triggers;
+COMMIT;
+
 /*remove stored configs*/
 TRUNCATE TABLE application_configuration;
 COMMIT;
-
 
 DELIMITER //
 DROP FUNCTION IF EXISTS translate//
