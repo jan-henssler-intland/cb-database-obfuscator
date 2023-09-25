@@ -208,12 +208,12 @@ BEGIN
             WHERE obj_ref.url LIKE '\/%' AND obj_ref.from_id BETWEEN start_id AND last_id;
 
             -- obfuscate urls in wiki fields
+            UPDATE object_reference obj_ref SET url = REGEXP_REPLACE(url, '^http.?:\/\/.*', 'http://something')
+            WHERE url IS NOT NULL AND obj_ref.from_id BETWEEN start_id AND last_id;
+
             UPDATE object_reference obj_ref
-            SET obj_ref.url = 'url-something'
-            WHERE obj_ref.to_id IS NULL
-              AND obj_ref.to_type_id IS NULL
-              AND obj_ref.assoc_id IS NULL
-              AND obj_ref.field_id IS NOT NULL AND obj_ref.from_id BETWEEN start_id AND last_id;
+            SET url = REGEXP_REPLACE(url, '^JIRAUSER.*', 'JIRAUSERrandom')
+            WHERE url IS NOT NULL AND obj_ref.from_id BETWEEN start_id AND last_id;
 
             UPDATE object_reference obj_ref JOIN usernames_temp u ON obj_ref.url LIKE u.name SET obj_ref.url = REGEXP_REPLACE(obj_ref.url, u.name,
                 concat('user-', u.id)) WHERE obj_ref.from_id BETWEEN start_id AND last_id;
@@ -289,291 +289,299 @@ DROP PROCEDURE IF EXISTS obfuscate_object_revision_batch;
                         SET r.description = NULL
                         WHERE r.type_id IN (1, 2, 12, 30, 31, 32, 34) AND r.object_id BETWEEN start_id AND last_id;
 
-                        COMMIT;
+                        -- improvement Ideas
+                        UPDATE object_reference SET url = REGEXP_REPLACE(url, '^http.?:\/\/.*', 'http://something') WHERE url IS NOT NULL;
+UPDATE object_reference SET url = REGEXP_REPLACE(url, '^JIRAUSER.*', 'JIRAUSERrandom') WHERE url IS NOT NULL;
 
-                        SET start_id = last_id;
-                    END WHILE;
+            COMMIT;
 
-                ALTER TABLE object_revision DROP INDEX object_revision_object_id_type;
-            END //
+            SET start_id = last_id;
+        END WHILE;
 
-            DROP PROCEDURE IF EXISTS obfuscated_task_batch;
-            CREATE PROCEDURE obfuscated_task_batch()
-            BEGIN
-                DECLARE batch_size INT DEFAULT 2500; -- Set your desired batch size here
-                DECLARE last_id INT DEFAULT 0;
-                DECLARE max_id INT DEFAULT 0;
-                DECLARE start_id INT DEFAULT 0;
+        ALTER TABLE object_revision DROP INDEX object_revision_object_id_type;
+END //
+
+CALL obfuscate_object_revision_batch();
+
+                        DROP PROCEDURE IF EXISTS obfuscated_task_batch;
+                        CREATE PROCEDURE obfuscated_task_batch()
+                        BEGIN
+                            DECLARE batch_size INT DEFAULT 2500; -- Set your desired batch size here
+                            DECLARE last_id INT DEFAULT 0;
+                            DECLARE max_id INT DEFAULT 0;
+                            DECLARE start_id INT DEFAULT 0;
 
 
-                SELECT max(id) INTO last_id FROM task obj;
+                            SELECT max(id) INTO last_id FROM task obj;
 
-                WHILE start_id < max_id DO
-                        -- Insert data in batches
-                        SELECT max(id) INTO last_id FROM (SELECT obj.id FROM task obj WHERE start_id < obj.id ORDER BY obj.id LIMIT batch_size) tt;
+                            WHILE start_id < max_id DO
+                                    -- Insert data in batches
+                                    SELECT max(id) INTO last_id FROM (SELECT obj.id FROM task obj WHERE start_id < obj.id ORDER BY obj.id LIMIT batch_size) tt;
 
-                        -- update task summary and description
-                        UPDATE task t
-                        SET t.summary = concat('Task', t.id, ' ', substr(t.summary, 1, 4), ' :', LENGTH(t.summary))
-                        WHERE t.summary IS NOT NULL AND t.id BETWEEN start_id AND last_id;
-                        COMMIT;
+                                    -- update task summary and description
+                                    UPDATE task t
+                                    SET t.summary = concat('Task', t.id, ' ', substr(t.summary, 1, 4), ' :', LENGTH(t.summary))
+                                    WHERE t.summary IS NOT NULL AND t.id BETWEEN start_id AND last_id;
+                                    COMMIT;
 
-                        UPDATE task t
-                        SET t.details = CONVERT(LENGTH(t.details), CHAR)
-                        WHERE t.details IS NOT NULL AND t.id BETWEEN start_id AND last_id;
-                        COMMIT;
+                                    UPDATE task t
+                                    SET t.details = CONVERT(LENGTH(t.details), CHAR)
+                                    WHERE t.details IS NOT NULL AND t.id BETWEEN start_id AND last_id;
+                                    COMMIT;
 
-                        -- UPDATE custom field value (not choice data)
-                        UPDATE task_field_value tfv
-                        SET tfv.field_value = (
-                            CASE
-                                WHEN TRIM(TRANSLATE(substr(tfv.field_value, 1, 100), '0123456789-,.', ' ')) IS NULL
-                                    THEN '1'
-                                ELSE concat(substr(tfv.field_value, 1, 2), ' :', LENGTH(tfv.field_value))
-                                END)
-                        WHERE tfv.field_value IS NOT NULL
-                          AND should_obfuscate(tfv.field_value, tfv.label_id)
-                          AND (tfv.label_id in (3, 80) OR tfv.label_id >= 1000) AND tfv.task_id BETWEEN start_id AND last_id;
-                        COMMIT;
-
-                        -- UPDATE summary, description and custom field value
-                        UPDATE task_field_history tfh
-                        SET tfh.old_value = (
-                            CASE
-                                WHEN tfh.old_value IS NOT NULL AND should_obfuscate(tfh.old_value, tfh.label_id) THEN (
-                                    CASE
-                                        WHEN TRIM(TRANSLATE(substr(old_value, 1, 100), '0123456789-,.', ' ')) IS NULL
-                                            THEN tfh.revision - 1
-                                        ELSE concat(substr(old_value, 1, 2), ' :', LENGTH(tfh.old_value))
-                                        END)
-                                ELSE tfh.old_value END
-                            ),
-                            tfh.new_value = (
-                                CASE
-                                    WHEN tfh.new_value IS NOT NULL and should_obfuscate(tfh.new_value, tfh.label_id) THEN (
+                                    -- UPDATE custom field value (not choice data)
+                                    UPDATE task_field_value tfv
+                                    SET tfv.field_value = (
                                         CASE
-                                            WHEN TRIM(TRANSLATE(substr(tfh.new_value, 1, 100), '0123456789-,.', ' ')) IS NULL
-                                                THEN tfh.revision
-                                            ELSE concat(substr(tfh.new_value, 1, 2), ' :', LENGTH(tfh.new_value))
+                                            WHEN TRIM(TRANSLATE(substr(tfv.field_value, 1, 100), '0123456789-,.', ' ')) IS NULL
+                                                THEN '1'
+                                            ELSE concat(substr(tfv.field_value, 1, 2), ' :', LENGTH(tfv.field_value))
                                             END)
-                                    ELSE new_value END
-                                )
-                        WHERE (tfh.label_id IN (3, 80)
-                            OR tfh.label_id >= 1000) AND tfh.task_id BETWEEN start_id AND last_id;
-                        COMMIT;
+                                    WHERE tfv.field_value IS NOT NULL
+                                      AND should_obfuscate(tfv.field_value, tfv.label_id)
+                                      AND (tfv.label_id in (3, 80) OR tfv.label_id >= 1000) AND tfv.task_id BETWEEN start_id AND last_id;
+                                    COMMIT;
 
-                        SET start_id = last_id;
-                    END WHILE;
-            END //
+                                    -- UPDATE summary, description and custom field value
+                                    UPDATE task_field_history tfh
+                                    SET tfh.old_value = (
+                                        CASE
+                                            WHEN tfh.old_value IS NOT NULL AND should_obfuscate(tfh.old_value, tfh.label_id) THEN (
+                                                CASE
+                                                    WHEN TRIM(TRANSLATE(substr(old_value, 1, 100), '0123456789-,.', ' ')) IS NULL
+                                                        THEN tfh.revision - 1
+                                                    ELSE concat(substr(old_value, 1, 2), ' :', LENGTH(tfh.old_value))
+                                                    END)
+                                            ELSE tfh.old_value END
+                                        ),
+                                        tfh.new_value = (
+                                            CASE
+                                                WHEN tfh.new_value IS NOT NULL and should_obfuscate(tfh.new_value, tfh.label_id) THEN (
+                                                    CASE
+                                                        WHEN TRIM(TRANSLATE(substr(tfh.new_value, 1, 100), '0123456789-,.', ' ')) IS NULL
+                                                            THEN tfh.revision
+                                                        ELSE concat(substr(tfh.new_value, 1, 2), ' :', LENGTH(tfh.new_value))
+                                                        END)
+                                                ELSE new_value END
+                                            )
+                                    WHERE (tfh.label_id IN (3, 80)
+                                        OR tfh.label_id >= 1000) AND tfh.task_id BETWEEN start_id AND last_id;
+                                    COMMIT;
 
-            DROP PROCEDURE IF EXISTS obfuscate_task_type;
-            CREATE PROCEDURE obfuscate_task_type()
-            BEGIN
-                DECLARE obfuscate_task_type BOOLEAN DEFAULT TRUE;
-                IF obfuscate_task_type
-                THEN
-                    -- TASK_TYPE reduce prefix to 2 characters
-                    UPDATE task_type
-                    SET prefix = substr(prefix, 1, 2);
-                    COMMIT;
-                END IF;
-            END;
+                                    SET start_id = last_id;
+                                END WHILE;
+                        END //
 
-            CALL run_obfuscated();
+                        -- to do chunk wise:
+                        DROP PROCEDURE IF EXISTS obfuscate_task_type;
+                        CREATE PROCEDURE obfuscate_task_type()
+                        BEGIN
+                            DECLARE obfuscate_task_type BOOLEAN DEFAULT TRUE;
+                            IF obfuscate_task_type
+                            THEN
+                                -- TASK_TYPE reduce prefix to 2 characters
+                                UPDATE task_type
+                                SET prefix = substr(prefix, 1, 2);
+                                COMMIT;
+                            END IF;
+                        END;
 
-            DROP PROCEDURE IF EXISTS run_obfuscated;
-            CREATE PROCEDURE run_obfuscated()
-            BEGIN
-                SET AUTOCOMMIT = 0;
+
+                        CALL obfuscated_task_batch();
+                        CALL obfuscate_task_type();
+
+                        CALL run_obfuscated();
+
+                        DROP PROCEDURE IF EXISTS run_obfuscated;
+                        CREATE PROCEDURE run_obfuscated()
+                        BEGIN
+                            SET AUTOCOMMIT = 0;
 
 -- in mysql it's not supported
-                truncate table object_revision_blobs;
-                COMMIT;
-                select '** START obfuscated_acl_role_batch' AS '** DEBUG:';
-                CALL obfuscated_acl_role_batch();
+                            truncate table object_revision_blobs;
+                            COMMIT;
+                            select '** START obfuscated_acl_role_batch' AS '** DEBUG:';
+                            CALL obfuscated_acl_role_batch();
 
-                select '** START obfuscate_object_reference_batch' AS '** DEBUG:';
-                CALL obfuscate_object_reference_batch();
+                            select '** START obfuscate_object_reference_batch' AS '** DEBUG:';
+                            CALL obfuscate_object_reference_batch();
 
 
-                select '** START obfuscate_object_revision_batch' AS '** DEBUG:';
-                CALL obfuscate_object_revision_batch();
+                            select '** START obfuscate_object_revision_batch' AS '** DEBUG:';
+                            CALL obfuscate_object_revision_batch();
 
-                select '** START replace_obfuscated_user' AS '** DEBUG:';
-                CALL replace_obfuscated_user();
+                            select '** START replace_obfuscated_user' AS '** DEBUG:';
+                            CALL replace_obfuscated_user();
 
-                /*Clear the JIRA or DOORs history entry*/
-                CREATE TEMPORARY TABLE IF NOT EXISTS tmp_jira ENGINE=MEMORY AS (
-                    SELECT REF.assoc_id FROM object_reference REF
-                                                 INNER JOIN object TRK
-                                                            ON TRK.id = REF.to_id
-                                                 INNER JOIN existing PRJ
-                                                            ON PRJ.proj_id = TRK.proj_id
-                                                 INNER JOIN object_revision REV
-                                                            ON REV.object_id = TRK.id
-                                                                AND REV.revision = TRK.revision
-                                                 INNER JOIN object ASSOC
-                                                            ON ASSOC.id = REF.assoc_id
-                                                 INNER JOIN object_revision ARV
-                                                            ON ARV.object_id = ASSOC.id
-                                                                AND ARV.revision = ASSOC.revision
-                    WHERE REF.from_type_id IN (2277294, 65231461)
-                      AND REF.to_type_id = 3
-                );
+                            /*Clear the JIRA or DOORs history entry*/
+                            CREATE TEMPORARY TABLE IF NOT EXISTS tmp_jira ENGINE=MEMORY AS (
+                                SELECT REF.assoc_id FROM object_reference REF
+                                                             INNER JOIN object TRK
+                                                                        ON TRK.id = REF.to_id
+                                                             INNER JOIN existing PRJ
+                                                                        ON PRJ.proj_id = TRK.proj_id
+                                                             INNER JOIN object_revision REV
+                                                                        ON REV.object_id = TRK.id
+                                                                            AND REV.revision = TRK.revision
+                                                             INNER JOIN object ASSOC
+                                                                        ON ASSOC.id = REF.assoc_id
+                                                             INNER JOIN object_revision ARV
+                                                                        ON ARV.object_id = ASSOC.id
+                                                                            AND ARV.revision = ASSOC.revision
+                                WHERE REF.from_type_id IN (2277294, 65231461)
+                                  AND REF.to_type_id = 3
+                            );
 
-                UPDATE object_revision SET description = NULL WHERE object_id IN ( SELECT assoc_id FROM tmp_jira );
-                COMMIT;
+                            UPDATE object_revision SET description = NULL WHERE object_id IN ( SELECT assoc_id FROM tmp_jira );
+                            COMMIT;
 
-                -- update user data
-                UPDATE users
-                SET name               = concat('user-', id),
-                    passwd             = NULL,
-                    hostname           = NULL,
-                    firstname          = concat('First-', id),
-                    lastname           = concat('Last-', id),
-                    title              = NULL,
-                    address            = NULL,
-                    zip                = NULL,
-                    city               = NULL,
-                    state              = NULL,
-                    country            = NULL,
-                    language           = NULL,
-                    geo_country        = NULL,
-                    geo_region         = NULL,
-                    geo_city           = NULL,
-                    geo_latitude       = NULL,
-                    geo_longitude      = NULL,
-                    source_of_interest = NULL,
-                    scc                = NULL,
-                    team_size          = NULL,
-                    division_size      = NULL,
-                    company            = NULL,
-                    email              = concat('user', id, '@testemail.testemail'),
-                    email_client       = NULL,
-                    phone              = NULL,
-                    mobil              = NULL,
-                    skills             = NULL,
-                    unused0            = NULL,
-                    unused1            = NULL,
-                    unused2            = NULL,
-                    referrer_url       = NULL
-                WHERE name NOT IN ('system', 'computed.update', 'deployment.executor', 'scm.executor');
-                COMMIT;
-                select '** FINISH users' AS '** DEBUG:';
-                -- remove user photos
-                TRUNCATE TABLE users_small_photo_blobs;
-                COMMIT;
-                select '** FINISH users_small_photo_blobs' AS '** DEBUG:';
-                TRUNCATE TABLE users_large_photo_blobs;
-                COMMIT;
-                select '** FINISH users_large_photo_blobs' AS '** DEBUG:';
-                -- remove user preferences: DOORS_BRIDGE_LOGIN(63),JIRA_SERVER_LOGIN(67),SLACK_USER_ID(2001),SLACK_USER_TOKEN(2002)
-                DELETE
-                FROM user_pref
-                WHERE pref_id IN (63, 67, 2001, 2002);
-                COMMIT;
-                select '** FINISH user_pref' AS '** DEBUG:';
+                            -- update user data
+                            UPDATE users
+                            SET name               = concat('user-', id),
+                                passwd             = NULL,
+                                hostname           = NULL,
+                                firstname          = concat('First-', id),
+                                lastname           = concat('Last-', id),
+                                title              = NULL,
+                                address            = NULL,
+                                zip                = NULL,
+                                city               = NULL,
+                                state              = NULL,
+                                country            = NULL,
+                                language           = NULL,
+                                geo_country        = NULL,
+                                geo_region         = NULL,
+                                geo_city           = NULL,
+                                geo_latitude       = NULL,
+                                geo_longitude      = NULL,
+                                source_of_interest = NULL,
+                                scc                = NULL,
+                                team_size          = NULL,
+                                division_size      = NULL,
+                                company            = NULL,
+                                email              = concat('user', id, '@testemail.testemail'),
+                                email_client       = NULL,
+                                phone              = NULL,
+                                mobil              = NULL,
+                                skills             = NULL,
+                                unused0            = NULL,
+                                unused1            = NULL,
+                                unused2            = NULL,
+                                referrer_url       = NULL
+                            WHERE name NOT IN ('system', 'computed.update', 'deployment.executor', 'scm.executor');
+                            COMMIT;
+                            select '** FINISH users' AS '** DEBUG:';
+                            -- remove user photos
+                            TRUNCATE TABLE users_small_photo_blobs;
+                            COMMIT;
+                            select '** FINISH users_small_photo_blobs' AS '** DEBUG:';
+                            TRUNCATE TABLE users_large_photo_blobs;
+                            COMMIT;
+                            select '** FINISH users_large_photo_blobs' AS '** DEBUG:';
+                            -- remove user preferences: DOORS_BRIDGE_LOGIN(63),JIRA_SERVER_LOGIN(67),SLACK_USER_ID(2001),SLACK_USER_TOKEN(2002)
+                            DELETE
+                            FROM user_pref
+                            WHERE pref_id IN (63, 67, 2001, 2002);
+                            COMMIT;
+                            select '** FINISH user_pref' AS '** DEBUG:';
 -- remove user keys
-                TRUNCATE TABLE user_key;
-                COMMIT;
-                select '** FINISH user_key' AS '** DEBUG:';
+                            TRUNCATE TABLE user_key;
+                            COMMIT;
+                            select '** FINISH user_key' AS '** DEBUG:';
 -- rename projects
-                UPDATE existing
-                SET name     = concat('Project', proj_id),
-                    key_name = concat('K-', proj_id)
-                WHERE name <> 'codeBeamer Review Project';
-                COMMIT;
-                select '** FINISH existing' AS '** DEBUG:';
-                -- remove jira synch
-                TRUNCATE TABLE object_job_schedule;
-                COMMIT;
-                select '** FINISH object_job_schedule' AS '** DEBUG:';
-                CALL obfuscated_task_batch();
-                select '** FINISH obfuscated_task_batch' AS '** DEBUG:';
-                CALL obfuscate_task_type();
-                select '** FINISH obfuscate_task_type' AS '** DEBUG:';
-                -- remove report jobs
-                TRUNCATE TABLE object_quartz_schedule;
-                COMMIT;
-                select '** FINISH object_quartz_schedule' AS '** DEBUG:';
-                -- UPDATE tag name
-                UPDATE label
-                SET name = concat('LABEL', id)
-                WHERE name NOT IN ('FINISHED_TESTRUN_GENERATION');
-                COMMIT;
-                select '** FINISH label' AS '** DEBUG:';
-                UPDATE workingset
-                SET name        = concat('WS-', id),
-                    description = NULL
-                WHERE name != 'member';
-                COMMIT;
-                select '** FINISH workingset' AS '** DEBUG:';
-                SET FOREIGN_KEY_CHECKS = 0;
-                TRUNCATE table background_job;
-                SET FOREIGN_KEY_CHECKS = 1;
-                COMMIT;
-                select '** FINISH background_job' AS '** DEBUG:';
-                SET FOREIGN_KEY_CHECKS = 0;
-                TRUNCATE table background_step;
-                SET FOREIGN_KEY_CHECKS = 1;
-                COMMIT;
-                select '** FINISH background_step' AS '** DEBUG:';
-                TRUNCATE TABLE document_cache_data_blobs;
-                COMMIT;
-                select '** FINISH document_cache_data_blobs' AS '** DEBUG:';
-                SET FOREIGN_KEY_CHECKS = 0;
-                TRUNCATE table document_cache_data;
-                SET FOREIGN_KEY_CHECKS = 1;
-                COMMIT;
+                            UPDATE existing
+                            SET name     = concat('Project', proj_id),
+                                key_name = concat('K-', proj_id)
+                            WHERE name <> 'codeBeamer Review Project';
+                            COMMIT;
+                            select '** FINISH existing' AS '** DEBUG:';
+                            -- remove jira synch
+                            TRUNCATE TABLE object_job_schedule;
+                            COMMIT;
+                            select '** FINISH object_job_schedule' AS '** DEBUG:';
+                            CALL obfuscated_task_batch();
+                            select '** FINISH obfuscated_task_batch' AS '** DEBUG:';
+                            CALL obfuscate_task_type();
+                            select '** FINISH obfuscate_task_type' AS '** DEBUG:';
+                            -- remove report jobs
+                            TRUNCATE TABLE object_quartz_schedule;
+                            COMMIT;
+                            select '** FINISH object_quartz_schedule' AS '** DEBUG:';
+                            -- UPDATE tag name
+                            UPDATE label
+                            SET name = concat('LABEL', id)
+                            WHERE name NOT IN ('FINISHED_TESTRUN_GENERATION');
+                            COMMIT;
+                            select '** FINISH label' AS '** DEBUG:';
+                            UPDATE workingset
+                            SET name        = concat('WS-', id),
+                                description = NULL
+                            WHERE name != 'member';
+                            COMMIT;
+                            select '** FINISH workingset' AS '** DEBUG:';
+                            SET FOREIGN_KEY_CHECKS = 0;
+                            TRUNCATE table background_job;
+                            SET FOREIGN_KEY_CHECKS = 1;
+                            COMMIT;
+                            select '** FINISH background_job' AS '** DEBUG:';
+                            SET FOREIGN_KEY_CHECKS = 0;
+                            TRUNCATE table background_step;
+                            SET FOREIGN_KEY_CHECKS = 1;
+                            COMMIT;
+                            select '** FINISH background_step' AS '** DEBUG:';
+                            TRUNCATE TABLE document_cache_data_blobs;
+                            COMMIT;
+                            select '** FINISH document_cache_data_blobs' AS '** DEBUG:';
+                            SET FOREIGN_KEY_CHECKS = 0;
+                            TRUNCATE table document_cache_data;
+                            SET FOREIGN_KEY_CHECKS = 1;
+                            COMMIT;
 
-                TRUNCATE TABLE background_job_meta;
-                COMMIT;
+                            TRUNCATE TABLE background_job_meta;
+                            COMMIT;
 
-                TRUNCATE TABLE background_step_result;
-                COMMIT;
+                            TRUNCATE TABLE background_step_result;
+                            COMMIT;
 
-                TRUNCATE TABLE background_step_context;
-                COMMIT;
+                            TRUNCATE TABLE background_step_context;
+                            COMMIT;
 
-                TRUNCATE TABLE QRTZ_BLOB_TRIGGERS;
-                COMMIT;
+                            TRUNCATE TABLE QRTZ_BLOB_TRIGGERS;
+                            COMMIT;
 
-                TRUNCATE TABLE QRTZ_CALENDARS;
-                COMMIT;
+                            TRUNCATE TABLE QRTZ_CALENDARS;
+                            COMMIT;
 
-                TRUNCATE TABLE QRTZ_CRON_TRIGGERS;
-                COMMIT;
+                            TRUNCATE TABLE QRTZ_CRON_TRIGGERS;
+                            COMMIT;
 
-                TRUNCATE TABLE QRTZ_FIRED_TRIGGERS;
-                COMMIT;
+                            TRUNCATE TABLE QRTZ_FIRED_TRIGGERS;
+                            COMMIT;
 
-                TRUNCATE TABLE QRTZ_LOCKS;
-                COMMIT;
+                            TRUNCATE TABLE QRTZ_LOCKS;
+                            COMMIT;
 
-                TRUNCATE TABLE QRTZ_PAUSED_TRIGGER_GRPS;
-                COMMIT;
+                            TRUNCATE TABLE QRTZ_PAUSED_TRIGGER_GRPS;
+                            COMMIT;
 
-                TRUNCATE TABLE QRTZ_SCHEDULER_STATE;
-                COMMIT;
+                            TRUNCATE TABLE QRTZ_SCHEDULER_STATE;
+                            COMMIT;
 
-                TRUNCATE TABLE QRTZ_SIMPLE_TRIGGERS;
-                COMMIT;
+                            TRUNCATE TABLE QRTZ_SIMPLE_TRIGGERS;
+                            COMMIT;
 
-                TRUNCATE TABLE QRTZ_SIMPROP_TRIGGERS;
+                            TRUNCATE TABLE QRTZ_SIMPROP_TRIGGERS;
+                            select '** FINISH Obfuscated script' AS '** DEBUG:';
 
-                DROP TABLE IF EXISTS usernames_temp;
-                SELECT '** FINISH Obfuscation' AS '** DEBUG:';
+                        END //
 
-            END
-            //
-
-CALL run_obfuscated() //
-DROP FUNCTION IF EXISTS translate//
-DROP FUNCTION IF EXISTS random_string//
-DROP FUNCTION IF EXISTS should_obfuscate//
-DROP PROCEDURE replace_obfuscated_user//
-DROP PROCEDURE replace_obfuscated_batch//
-DROP PROCEDURE obfuscated_acl_role_batch//
-DROP PROCEDURE obfuscated_task_batch//
-DROP PROCEDURE run_obfuscated//
+                        CALL run_obfuscated();
+                        DROP FUNCTION IF EXISTS translate//
+                        DROP FUNCTION IF EXISTS random_string//
+                        DROP FUNCTION IF EXISTS should_obfuscate//
+                        DROP PROCEDURE IF EXISTS replace_obfuscated_user//
+                        DROP PROCEDURE IF EXISTS replace_obfuscated_batch//
+                        DROP PROCEDURE IF EXISTS obfuscated_acl_role_batch//
+                        DROP PROCEDURE IF EXISTS obfuscated_task_batch//
+                        DROP PROCEDURE IF EXISTS run_obfuscated//
 DELIMITER ;
