@@ -1,0 +1,3 @@
+codebeamer.audit_trail_logs
+codebeamer.tmp_users
+codebeamer.audit_trail_logs_tmp
