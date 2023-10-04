@@ -27,7 +27,7 @@ if [ $? -ne 0 ];then
 	exit 2
 fi
 
-#./run_paralell_connection.sh 
+./run_paralell_connection.sh 
 #cleanup
 mysql  --defaults-file=${MYCNF} < post_cleanup.sql
 #will destroy data mysql  --defaults-file=${MYCNF} < post_cleanup_rerunable_condition.sql
