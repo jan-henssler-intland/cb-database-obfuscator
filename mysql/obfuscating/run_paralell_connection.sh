@@ -57,7 +57,7 @@ echo "start multiconnection" >> ${OUTFILE}
 echo "------>start-audit_trail_logs"
 while [ ${start} -lt ${MAX_ATL_ID} ];do
 	let end=${start}+1000
-        echo "von $start bis $end"
+        echo "audit_trail_logs von $start bis $end"
         echo "CALL replace_obfuscated_user(${start},${end});"|mysql --defaults-file=${MYCNF} 2>&1 >> ${OUTFILE} &
 	wait_until_below_sql_statements
 	let start=${end}+1
@@ -81,7 +81,7 @@ echo "start multiconnection" >> ${OUTFILE}
 echo "------>start-obfuscated_acl_role_batch"
 while [ ${start} -lt ${MAX_ACL_ID} ];do
 	let end=${start}+1000
-        echo "von $start bis $end"
+        echo "acl_role von $start bis $end"
         echo "CALL obfuscated_acl_role_batch(${start},${end});"|mysql --defaults-file=${MYCNF} 2>&1 >> ${OUTFILE} &
 	wait_until_below_sql_statements
 	let start=${end}+1
@@ -105,7 +105,7 @@ echo "start multiconnection" >> ${OUTFILE}
 echo "------>start-obfuscate_object_reference_batch"
 while [ ${start} -lt ${MAX_OBJREF_ID} ];do
 	let end=${start}+1000
-        echo "von $start bis $end"
+        echo "object_reference von $start bis $end"
         echo "CALL obfuscate_object_reference_batch(${start},${end});"|mysql --defaults-file=${MYCNF} 2>&1 >> ${OUTFILE} &
 	wait_until_below_sql_statements
 	let start=${end}+1
@@ -129,7 +129,7 @@ echo "start multiconnection" >> ${OUTFILE}
 echo "------>start-obfuscate_object_revision"
 while [ ${start} -lt ${MAX_OBJ_ID} ];do
 	let end=${start}+1000
-        echo "von $start bis $end"
+        echo "object_revision von $start bis $end"
         echo "CALL obfuscate_object_revision(${start},${end});"|mysql --defaults-file=${MYCNF} 2>&1 >> ${OUTFILE} &
 	wait_until_below_sql_statements
 	let start=${end}+1
@@ -153,7 +153,7 @@ echo "start multiconnection" >> ${OUTFILE}
 echo "------>start-obfuscated_task_batch"
 while [ ${start} -lt ${MAX_TASK_ID} ];do
 	let end=${start}+1000
-        echo "von $start bis $end"
+        echo "task von $start bis $end"
         echo "CALL obfuscated_task_batch(${start},${end});"|mysql --defaults-file=${MYCNF} 2>&1 >> ${OUTFILE} &
 	wait_until_below_sql_statements
 	let start=${end}+1
@@ -178,7 +178,7 @@ echo "start multiconnection" >> ${OUTFILE}
 echo "------>start-obfuscate_task_type"
 while [ ${start} -lt ${MAX_TTYPE_ID} ];do
 	let end=${start}+1000
-        echo "von $start bis $end"
+        echo "task_type von $start bis $end"
         echo "CALL obfuscate_task_type(${start},${end});"|mysql --defaults-file=${MYCNF} 2>&1 >> ${OUTFILE} &
 	wait_until_below_sql_statements
 	let start=${end}+1
