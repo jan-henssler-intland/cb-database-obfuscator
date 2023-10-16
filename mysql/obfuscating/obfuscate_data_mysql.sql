@@ -168,13 +168,13 @@ BEGIN
 
             UPDATE object_reference obj_ref
             SET obj_ref.url = concat('mailto:', obj_ref.from_id, '@testemail.testemail')
-            WHERE obj_ref.url LIKE 'mailto:%' AND obj_ref.from_id BETWEEN start_id AND max_id;
+            WHERE obj_ref.url LIKE 'mailto:%' AND obj_ref.id BETWEEN start_id AND max_id;
 
             COMMIT;
 
             UPDATE object_reference obj_ref
             SET obj_ref.url = concat('/', obj_ref.from_id)
-            WHERE obj_ref.url LIKE '\/%' AND obj_ref.from_id BETWEEN start_id AND max_id;
+            WHERE obj_ref.url LIKE '\/%' AND obj_ref.id BETWEEN start_id AND max_id;
 
             COMMIT;
 
@@ -184,11 +184,11 @@ BEGIN
             WHERE obj_ref.to_id IS NULL
               AND obj_ref.to_type_id IS NULL
               AND obj_ref.assoc_id IS NULL
-              AND obj_ref.field_id IS NOT NULL AND obj_ref.from_id BETWEEN start_id AND max_id;
+              AND obj_ref.field_id IS NOT NULL AND obj_ref.id BETWEEN start_id AND max_id;
             COMMIT;
 
             UPDATE object_reference obj_ref JOIN tmp_users u ON obj_ref.url LIKE u.name SET obj_ref.url = REGEXP_REPLACE(obj_ref.url, u.name,
-                concat('USER-', u.id)) WHERE obj_ref.from_id BETWEEN start_id AND max_id;
+                concat('USER-', u.id)) WHERE obj_ref.id BETWEEN start_id AND max_id;
             COMMIT;
 END //
 
