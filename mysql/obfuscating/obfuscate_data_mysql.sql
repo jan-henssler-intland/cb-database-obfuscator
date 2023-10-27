@@ -162,7 +162,7 @@ BEGIN
     -- object_reference
     UPDATE object_reference obj_ref
     SET obj_ref.url = CONCAT('file://', obj_ref.from_id)
-             WHERE obj_ref.url LIKE 'FILE://%' AND obj_ref.from_id BETWEEN start_id AND max_id;
+             WHERE obj_ref.url LIKE 'FILE://%' AND obj_ref.id BETWEEN start_id AND max_id;
 
             COMMIT;
 
