@@ -120,40 +120,32 @@ BEGIN
 		  AND r.type_id NOT IN (9, 10, 17, 18, 19, 21, 23, 25, 26, 33, 35, 44);
 		COMMIT;
 
-		/*update description of artifacts, except: calendar, work calendar, association
-		  state transition, transition condition, workflow action*/
-		UPDATE object_revision r
-		SET r.description = REGEXP_REPLACE(r.description, '"description":\s*"((\\"|[^"])*)"',
-										   '"description":"Obfuscated description-' ||
-										   LENGTH(r.description) || '"')
-		WHERE r.TYPE_ID NOT IN (9, 10, 17, 23, 24, 28);
-		COMMIT;
+        -- update description of artifacts, except: calendar, work calendar, association,state transition, transition condition, workflow action
+        UPDATE object_revision r
+        SET r.description = JSON_MERGEPATCH(r.description, '{"description": "Obfuscated description' || random_string(22) ||'"}')
+        WHERE r.type_id NOT IN (9, 10, 17, 23, 24, 28)
+          AND JSON_SERIALIZE(r.description) IS NOT NULL;
+        COMMIT;
 
-		/*update key, category of projects and trackers*/
-		UPDATE object_revision r
-			SET r.description = REGEXP_REPLACE(
-							  REGEXP_REPLACE(r.description, '"keyName":"[^"]*"', '"keyName":"K-' || r.proj_id || '"'),
-							  '"category":"[^"]*"', '"category":"TestCategory"')
-			WHERE r.type_id IN (22, 16);
-		COMMIT;
+        -- Update categoryName of project categories
+        UPDATE object_revision r
+        SET r.description = JSON_MERGEPATCH(r.description, '{"categoryName": "' || r.name || '"}')
+        WHERE r.type_id = 42
+          AND JSON_SERIALIZE(r.description) IS NOT NULL;
+        COMMIT;
 
-		/*Update categoryName of project categories*/
-		UPDATE object_revision r
-		SET r.description = REGEXP_REPLACE(r.description, '"categoryName":"[^"]*"', '"categoryName":"' || r.name || '"')
-		WHERE r.type_id=42;
-		COMMIT;
+        -- delete simple comment message
+        UPDATE object_revision r
+        SET r.description = 'Obfuscated description-' || LENGTH(r.description)
+        WHERE r.type_id IN (13, 15)
+          AND JSON_SERIALIZE(r.description) IS NULL;
+        COMMIT;
 
-		/*delete simple comment message*/
-		UPDATE object_revision r
-		SET r.description = 'Obfuscated description-' || LENGTH(r.description)
-		WHERE r.type_id IN (13, 15)
-		  AND r.description IS NOT JSON;
-
-		/*delete description of : file, folder, baseline, user, tracker, dashboard*/
-		UPDATE object_revision r
-		SET r.description = NULL
-		WHERE r.type_id IN (1, 2, 12, 30, 31, 32, 34);
-		COMMIT;
+        -- delete description of : file, folder, baseline, user, tracker, dashboard
+        UPDATE object_revision r
+        SET r.description = NULL
+        WHERE r.type_id IN (1, 2, 12, 30, 31, 32, 34);
+        COMMIT;
 
     END IF;
   END;
