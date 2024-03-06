@@ -502,6 +502,8 @@ SET name        = 'WS-' || id,
 WHERE name != 'member';
 COMMIT;
 
+## TODO DISABLE CONSTRAINT FOR ALL TABLES WHICH SHOULD BE TRUNCATED
+
 TRUNCATE TABLE background_step;
 COMMIT;
 
