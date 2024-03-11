@@ -43,7 +43,6 @@ END;
 END replace_obfuscate_users;
 /
 
-
 CREATE OR
 REPLACE FUNCTION SHOULD_OBFUSCATE(
     field_value CLOB, label_id NUMBER)
@@ -174,7 +173,6 @@ WHERE r.type_id IN (13, 15)
   AND JSON_SERIALIZE(r.description) IS NULL
   AND r.object_id BETWEEN start_id AND max_id;
 COMMIT;
-
 
 -- delete description of : file, folder, baseline, user, tracker, dashboard
 UPDATE object_revision r
@@ -504,6 +502,9 @@ COMMIT;
 
 ## TODO DISABLE CONSTRAINT FOR ALL TABLES WHICH SHOULD BE TRUNCATED
 
+ALTER TABLE background_step DISABLE CONSTRAINT background_job_submitted_by_fk;
+ALTER TABLE background_ job DISABLE CONSTRAINT background_job_submitted_by_fk;
+
 TRUNCATE TABLE background_step;
 COMMIT;
 
@@ -555,6 +556,9 @@ COMMIT;
 -- remove stored configs
 TRUNCATE TABLE application_configuration;
 COMMIT;
+
+ALTER TABLE background_ job ENABLE CONSTRAINT background_job_submitted_by_fk;
+ALTER TABLE background_step ENABLE CONSTRAINT background_step_job_fk;
 
 -- drop all indexes, procedures and function, these are not needed anymore after successful obfuscation
 DROP INDEX obj_rev_name_type_idx;
