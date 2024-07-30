@@ -192,6 +192,7 @@ BEGIN
             COMMIT;
 END //
 
+
 -- object_revision
 DROP PROCEDURE IF EXISTS obfuscate_object_revision_batch;
     CREATE PROCEDURE obfuscate_object_revision_batch(start_id INT, max_id INT)
