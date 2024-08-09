@@ -115,6 +115,21 @@ done
 echo "------>stop-obfuscate_object_reference_batch"
 wait
 echo "stop obfuscate_object_reference_batch" >> ${OUTFILE}
+
+#we rush multiple times over obfuscate_object_reference_batch
+echo "start multiconnection" >> ${OUTFILE}
+echo "------>start-obfuscate_object_reference_user_batch"
+while [ ${start} -lt ${MAX_OBJREF_ID} ];do
+	let end=${start}+1000
+        echo "von $start bis $end object_reference"
+        echo "CALL obfuscate_object_reference_user_batch(${start},${end});"|mysql --defaults-file=${MYCNF} 2>&1 >> ${OUTFILE} &
+	wait_until_below_sql_statements
+	let start=${end}+1
+done
+echo "------>stop-obfuscate_object_reference_user_batch"
+wait
+echo "stop obfuscate_object_reference_user_batch" >> ${OUTFILE}
+
 ################################################object_revision#######################################
 ##just be sure that none is using my table
 wait_until_table_is_usable object_revision

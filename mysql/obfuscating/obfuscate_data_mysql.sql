@@ -186,10 +186,15 @@ BEGIN
               AND obj_ref.assoc_id IS NULL
               AND obj_ref.field_id IS NOT NULL AND obj_ref.id BETWEEN start_id AND max_id;
             COMMIT;
+END //
 
-            UPDATE object_reference obj_ref JOIN tmp_users u ON obj_ref.url LIKE u.name SET obj_ref.url = REGEXP_REPLACE(obj_ref.url, u.name,
-                concat('USER-', u.id)) WHERE obj_ref.id BETWEEN start_id AND max_id;
-            COMMIT;
+DROP PROCEDURE IF EXISTS obfuscate_object_reference_user_batch;
+    CREATE PROCEDURE obfuscate_object_reference_user_batch(start_id INT, max_id INT)
+    BEGIN
+        # TODO: Need to be improved
+        UPDATE object_reference obj_ref JOIN tmp_users u SET obj_ref.url = REGEXP_REPLACE(obj_ref.url, u.name,
+            concat('USER-', u.id)) WHERE MATCH(obj_ref.url) AGAINST (u.name  IN NATURAL LANGUAGE MODE) obj_ref.id BETWEEN start_id AND max_id;
+         COMMIT;
 END //
 
 
