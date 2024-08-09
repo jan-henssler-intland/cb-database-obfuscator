@@ -116,7 +116,7 @@ echo "------>stop-obfuscate_object_reference_batch"
 wait
 echo "stop obfuscate_object_reference_batch" >> ${OUTFILE}
 
-#we rush multiple times over obfuscate_object_reference_batch
+#we rush multiple times over obfuscate_object_reference_user_batch
 echo "start multiconnection" >> ${OUTFILE}
 echo "------>start-obfuscate_object_reference_user_batch"
 while [ ${start} -lt ${MAX_OBJREF_ID} ];do

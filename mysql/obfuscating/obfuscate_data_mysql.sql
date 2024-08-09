@@ -191,11 +191,29 @@ END //
 DROP PROCEDURE IF EXISTS obfuscate_object_reference_user_batch;
     CREATE PROCEDURE obfuscate_object_reference_user_batch(start_id INT, max_id INT)
     BEGIN
-        # TODO: Need to be improved
-        UPDATE object_reference obj_ref JOIN tmp_users u SET obj_ref.url = REGEXP_REPLACE(obj_ref.url, u.name,
-            concat('USER-', u.id)) WHERE MATCH(obj_ref.url) AGAINST (u.name  IN NATURAL LANGUAGE MODE) obj_ref.id BETWEEN start_id AND max_id;
-         COMMIT;
-END //
+        DECLARE done BOOLEAN DEFAULT FALSE;
+        DECLARE user_id_v INT DEFAULT 0;
+        DECLARE user_name_v VARCHAR(50);
+
+        DECLARE user_name_ids CURSOR FOR SELECT id, name FROM tmp_users u;
+
+        DECLARE CONTINUE HANDLER FOR NOT FOUND SET done = TRUE;
+
+        OPEN user_name_ids;
+        user_name_ids_loop:
+        LOOP
+            FETCH user_name_ids INTO user_id_v, user_name_V;
+            IF done THEN
+                LEAVE user_name_ids_loop;
+            END IF;
+            # TODO: Need to be improved
+            UPDATE object_reference obj_ref SET obj_ref.url = REGEXP_REPLACE(obj_ref.url, user_name_v,
+                                                                             concat('USER-', user_id_v)) WHERE MATCH(obj_ref.url) AGAINST (user_name_v  IN NATURAL LANGUAGE MODE) AND obj_ref.id BETWEEN start_id AND max_id;
+            COMMIT;
+        END LOOP
+            user_name_ids_loop;
+        CLOSE user_name_ids;
+    END //
 
 
 -- object_revision

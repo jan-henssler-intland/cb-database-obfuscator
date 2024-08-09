@@ -1,8 +1,8 @@
-alter table object_reference add id int PRIMARY KEY AUTO_INCREMENT;
+ALTER TABLE object_reference ADD id INT PRIMARY KEY AUTO_INCREMENT;
 #copy users table because obfuscating will destroy it
 DROP TABLE IF EXISTS tmp_users;
-CREATE TABLE tmp_users like users;
-INSERT INTO tmp_users select * from users;
+CREATE TABLE tmp_users LIKE users;
+INSERT INTO tmp_users SELECT * FROM users;
 SET AUTOCOMMIT = 0;
 
 DROP TABLE IF EXISTS statement_queue_obfuscate;
