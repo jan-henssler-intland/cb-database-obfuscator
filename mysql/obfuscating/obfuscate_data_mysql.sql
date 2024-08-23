@@ -39,7 +39,7 @@ DROP PROCEDURE IF EXISTS replace_obfuscated_batch;
 CREATE PROCEDURE replace_obfuscated_batch(v_id INT, v_name VARCHAR(255), start_id INT, max_id INT)
 BEGIN
     -- "bond's personal wiki" OR -- "bond [1]" OR -- {"name":"bond","id":1} OR -- {"id":1,"name":"bond"}
-    ## Here noch was machen funktioniert nicht richtig.!!
+    ## TODO: Here noch was machen funktioniert nicht richtig.!!
     UPDATE audit_trail_logs
     SET details = REPLACE(REPLACE(REPLACE(REPLACE(details, CONCAT('{"id":', v_id, ',"name":"', v_name, '"}'),
                                                   CONCAT('{"id":', v_id, ',"name":user-"', v_id, '"}')),
