@@ -308,7 +308,7 @@ DROP PROCEDURE IF EXISTS obfuscate_object_revision_batch;
                 END)
         WHERE tfv.field_value IS NOT NULL
           AND should_obfuscate(tfv.field_value, tfv.label_id)
-          AND (tfv.label_id IN (3, 80) OR tfv.label_id >= 1000)
+          AND (tfv.label_id IN (3, 80) OR tfv.label_id >= 1000) AND tfv.label_id != 13001
           AND tfv.task_id BETWEEN start_id AND max_id;
         COMMIT;
 
@@ -336,7 +336,7 @@ DROP PROCEDURE IF EXISTS obfuscate_object_revision_batch;
                     ELSE new_value END
                 )
         WHERE (tfh.label_id IN (3, 80)
-            OR tfh.label_id >= 1000)
+            OR tfh.label_id >= 1000) AND tfh.label_id != 13001
           AND tfh.task_id BETWEEN start_id AND max_id;
         COMMIT;
 

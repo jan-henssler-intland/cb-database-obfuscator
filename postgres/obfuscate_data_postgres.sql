@@ -73,7 +73,8 @@ BEGIN
                      /*Test run ID  label_id:1000104 value:2750e123c70a910cd6278a2c69f53676*/
                   ((label_id < 1000000) OR
                    mod(label_id, 10) != 4 OR
-                   field_value !~ '^([0-9]|[a-f]){32}$')));
+                   field_value !~ '^([0-9]|[a-f]){32}$'
+                    OR label_id != 13001)));
 EXCEPTION
     WHEN OTHERS
         THEN

@@ -75,6 +75,8 @@ AND
     ((label_id < 1000000) OR
     MOD (label_id, 10) != 4 OR
     (NOT regexp_like(field_value, '^([0-9]|[a-f]){32}$', 'cn'))
+    -- exclude ReqIf Identifier
+    OR label_id != 13001
     )))
 THEN
         RETURN 1;
